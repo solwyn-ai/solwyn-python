@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from solwyn import (
     BudgetExceededError,
     ConfigurationError,
@@ -10,18 +12,21 @@ from solwyn import (
 )
 
 
+@pytest.mark.unit
 def test_solwyn_error_is_importable_from_package_root() -> None:
     import solwyn
 
     assert hasattr(solwyn, "SolwynError"), "solwyn.SolwynError must be exported"
 
 
+@pytest.mark.unit
 def test_all_sdk_exceptions_inherit_from_solwyn_error() -> None:
     assert issubclass(BudgetExceededError, SolwynError)
     assert issubclass(ProviderUnavailableError, SolwynError)
     assert issubclass(ConfigurationError, SolwynError)
 
 
+@pytest.mark.unit
 def test_solwyn_error_catches_all_families() -> None:
     cases: list[tuple[type[SolwynError], dict[str, object]]] = [
         (
@@ -46,6 +51,7 @@ def test_solwyn_error_catches_all_families() -> None:
             raise AssertionError(f"{exc_class.__name__} did not match SolwynError") from err
 
 
+@pytest.mark.unit
 def test_exceptions_have_useful_repr() -> None:
     exc = BudgetExceededError(
         "over budget",

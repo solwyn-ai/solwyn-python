@@ -217,6 +217,7 @@ class TestBudgetCheckBeforeCall:
             "mode": "hard_deny",
             "budget_limit": 10.0,
             "current_usage": 10.0,
+            "denied_by_period": "monthly",
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response
@@ -248,6 +249,7 @@ class TestBudgetCheckBeforeCall:
             "mode": "hard_deny",
             "budget_limit": 10.0,
             "current_usage": 10.0,
+            "denied_by_period": "monthly",
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response
@@ -289,6 +291,7 @@ class TestBudgetCheckBeforeCall:
             "mode": "hard_deny",
             "budget_limit": 10.0,
             "current_usage": 10.0,
+            "denied_by_period": "monthly",
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response
@@ -803,7 +806,8 @@ def _make_async_solwyn(client, **overrides):
 class TestAsyncStreamingInterception:
     """Async streaming calls return an AsyncStreamWrapper."""
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_streaming_reports_metadata(self) -> None:
         from solwyn.stream import AsyncStreamWrapper
 
@@ -855,7 +859,8 @@ class TestAsyncStreamingInterception:
         await solwyn._budget._http.aclose()
         await solwyn._reporter._http.aclose()
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_google_generate_content_stream(self) -> None:
         """Async Google models.generate_content_stream() wraps and reports."""
         client = MagicMock()
@@ -898,7 +903,8 @@ class TestAsyncStreamingInterception:
         await solwyn._budget._http.aclose()
         await solwyn._reporter._http.aclose()
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_anthropic_messages_stream(self) -> None:
         """Async Anthropic messages.create(stream=True) wraps and reports."""
         client = MagicMock()

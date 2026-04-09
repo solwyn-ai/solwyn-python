@@ -292,7 +292,8 @@ async def _aiter(items):
 class TestAsyncStreamWrapper:
     """Async version yields chunks and calls async on_complete."""
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_yields_all_chunks(self) -> None:
         from solwyn.stream import AsyncStreamWrapper
 
@@ -313,7 +314,8 @@ class TestAsyncStreamWrapper:
         assert collected == chunks
         assert acc.observed == chunks
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_calls_on_complete(self) -> None:
         from solwyn.stream import AsyncStreamWrapper
 
@@ -332,7 +334,8 @@ class TestAsyncStreamWrapper:
         on_complete.assert_called_once()
         assert on_complete.call_args[0][0] is expected_td
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_error_during_iteration(self) -> None:
         from solwyn.stream import AsyncStreamWrapper
 
@@ -356,7 +359,8 @@ class TestAsyncStreamWrapper:
         on_error.assert_called_once()
         on_complete.assert_not_called()
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_context_manager(self) -> None:
         from solwyn.stream import AsyncStreamWrapper
 
@@ -383,7 +387,8 @@ class TestAsyncStreamWrapper:
 class TestAsyncStreamWrapperAbort:
     """Early abort settles reservation via close()."""
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_close_fires_on_complete(self) -> None:
         from solwyn.stream import AsyncStreamWrapper
 
@@ -403,7 +408,8 @@ class TestAsyncStreamWrapperAbort:
 
         on_complete.assert_called_once()
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_close_is_idempotent(self) -> None:
         from solwyn.stream import AsyncStreamWrapper
 
@@ -420,7 +426,8 @@ class TestAsyncStreamWrapperAbort:
         await wrapper.close()  # second call
         assert on_complete.call_count == 1
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_context_manager_exit_calls_close(self) -> None:
         from solwyn.stream import AsyncStreamWrapper
 
@@ -494,7 +501,8 @@ class TestExitSwallowsCallbackExceptions:
         # RuntimeError from callback should be swallowed, not propagated
         assert callback_calls == ["called"]
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_aexit_suppresses_callback_exception(self) -> None:
         """__aexit__ swallows exceptions from async on_complete."""
         from solwyn.stream import AsyncStreamWrapper
@@ -551,7 +559,8 @@ class TestExitSwallowsCallbackExceptions:
         # Verify callback was called (and raised, but was swallowed)
         assert callback_calls == ["on_complete_called"]
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_aexit_body_exception_takes_priority_over_callback_exception(
         self,
     ) -> None:
@@ -645,7 +654,8 @@ class TestSettleErrorSymmetry:
         on_error.assert_called_once()
         on_complete.assert_not_called()
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_on_error_called_exactly_once(self) -> None:
         """Async error path calls on_error once and not on_complete."""
         from solwyn.stream import AsyncStreamWrapper
@@ -670,7 +680,8 @@ class TestSettleErrorSymmetry:
         on_error.assert_called_once()
         on_complete.assert_not_called()
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_close_after_error_does_not_call_on_complete(self) -> None:
         """After async error settlement, close() must not fire on_complete."""
         from solwyn.stream import AsyncStreamWrapper
@@ -781,7 +792,8 @@ class TestSyncStreamWrapperInnerClose:
 class TestAsyncStreamWrapperInnerClose:
     """close() forwards cleanup to the inner stream's aclose() / close() method."""
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_close_calls_inner_aclose(self) -> None:
         """await wrapper.close() must invoke inner.aclose() when present."""
         from solwyn.stream import AsyncStreamWrapper
@@ -799,7 +811,8 @@ class TestAsyncStreamWrapperInnerClose:
 
         inner.aclose.assert_called_once()
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_context_manager_closes_inner_with_aclose_but_no_aexit(self) -> None:
         """async with wrapper: closes inner via aclose() when __aexit__ is absent."""
         from solwyn.stream import AsyncStreamWrapper
@@ -833,7 +846,8 @@ class TestAsyncStreamWrapperInnerClose:
 
         assert inner.aclose_called >= 1
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_close_falls_back_to_sync_close_when_no_aclose(self) -> None:
         """await wrapper.close() falls back to inner.close() when aclose() is absent."""
         from solwyn.stream import AsyncStreamWrapper

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import threading
 
+import pytest
+
 from solwyn._token_details import TokenDetails
 from solwyn._types import BudgetConfirmRequest
 from solwyn.budget import BudgetEnforcer
@@ -12,6 +14,7 @@ from solwyn.reporter import MetadataReporter
 _DUMMY_DETAILS = TokenDetails(input_tokens=10, output_tokens=5)
 
 
+@pytest.mark.unit
 def test_reporter_report_confirm_concurrent_appends() -> None:
     """report_confirm must be safe to call from many threads at once."""
     reporter = MetadataReporter(
@@ -47,6 +50,7 @@ def test_reporter_report_confirm_concurrent_appends() -> None:
         reporter.close()
 
 
+@pytest.mark.unit
 def test_budget_enforcer_local_costs_concurrent() -> None:
     """Concurrent _track_local_cost calls must not lose writes."""
     enforcer = BudgetEnforcer(

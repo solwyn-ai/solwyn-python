@@ -11,13 +11,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-SDK_SRC = Path(__file__).parent.parent / "src" / "solwyn"
+import pytest
+
+SDK_SRC = Path(__file__).resolve().parent.parent.parent / "src" / "solwyn"
 
 
 def _iter_source_files() -> list[Path]:
     return [p for p in SDK_SRC.rglob("*.py") if "_privacy" not in p.name]
 
 
+@pytest.mark.unit
 def test_no_logger_calls_receive_prompt_variables() -> None:
     """Source files must not pass variables named `text`, `content`,
     `messages`, `system`, `prompt`, or `contents` into a logger call."""
@@ -42,6 +45,7 @@ def test_no_logger_calls_receive_prompt_variables() -> None:
     )
 
 
+@pytest.mark.unit
 def test_extract_text_from_kwargs_is_removed() -> None:
     """The original _extract_text_from_kwargs that materialized the full
     joined prompt string must no longer exist."""
@@ -52,6 +56,7 @@ def test_extract_text_from_kwargs_is_removed() -> None:
     )
 
 
+@pytest.mark.unit
 def test_privacy_module_has_warning_banner() -> None:
     """The privacy-sensitive module must open with a visible banner."""
     privacy_py = (SDK_SRC / "_privacy.py").read_text()
@@ -61,6 +66,7 @@ def test_privacy_module_has_warning_banner() -> None:
     )
 
 
+@pytest.mark.unit
 def test_privacy_module_has_no_logging_import() -> None:
     """_privacy.py must never import the logging module."""
     privacy_py = (SDK_SRC / "_privacy.py").read_text()
@@ -70,6 +76,7 @@ def test_privacy_module_has_no_logging_import() -> None:
     )
 
 
+@pytest.mark.unit
 def test_no_print_calls_in_sdk_source() -> None:
     """SDK source files must not contain print() calls."""
     violations: list[str] = []

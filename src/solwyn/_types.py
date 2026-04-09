@@ -102,7 +102,7 @@ class BudgetCheckResponse(BaseModel):
     budget_limit: float = Field(..., description="Total budget limit for current period in USD")
     current_usage: float = Field(..., description="Current spend in USD for this period")
     denied_by_period: str | None = Field(
-        None, description="Which budget period triggered denial (e.g. 'daily')"
+        ..., description="Which budget period triggered denial (e.g. 'daily')"
     )
 
 

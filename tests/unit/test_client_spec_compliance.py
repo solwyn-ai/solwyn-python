@@ -69,6 +69,7 @@ class TestBudgetExceededErrorFieldCorrectness:
             "mode": "hard_deny",
             "budget_limit": 500.0,
             "current_usage": 499.0,
+            "denied_by_period": "monthly",
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response
@@ -110,6 +111,7 @@ class TestBudgetExceededErrorFieldCorrectness:
             "mode": "hard_deny",
             "budget_limit": 1000.0,  # This is the actual limit
             "current_usage": 950.0,
+            "denied_by_period": "monthly",
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response

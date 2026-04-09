@@ -5,13 +5,16 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from solwyn._token_details import TokenDetails
 from solwyn._types import BudgetConfirmRequest
 from solwyn.budget import BudgetEnforcer, _BudgetEnforcerBase
 
-SDK_SRC = Path(__file__).parent.parent / "src" / "solwyn"
+SDK_SRC = Path(__file__).resolve().parent.parent.parent / "src" / "solwyn"
 
 
+@pytest.mark.unit
 def test_sync_on_complete_does_not_call_confirm_cost() -> None:
     """The sync on_complete closure in Solwyn._intercepted_call must NOT
     call budget.confirm_cost() — it must use reporter.report_confirm()."""
@@ -40,6 +43,7 @@ def test_sync_on_complete_does_not_call_confirm_cost() -> None:
     raise AssertionError("Could not find on_complete in Solwyn._intercepted_call")
 
 
+@pytest.mark.unit
 def test_build_confirm_request_exists_on_base() -> None:
     """_BudgetEnforcerBase must expose build_confirm_request."""
     assert hasattr(_BudgetEnforcerBase, "build_confirm_request"), (
@@ -47,6 +51,7 @@ def test_build_confirm_request_exists_on_base() -> None:
     )
 
 
+@pytest.mark.unit
 def test_build_confirm_request_returns_pydantic_model() -> None:
     """build_confirm_request must return a BudgetConfirmRequest, not a dict."""
     enforcer = BudgetEnforcer(

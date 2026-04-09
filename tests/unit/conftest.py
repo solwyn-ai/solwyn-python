@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from solwyn.circuit_breaker import CircuitBreaker
@@ -28,16 +29,12 @@ ALLOW_BUDGET_RESPONSE = {
 @pytest.fixture
 def mock_httpx_client():
     """Return a mocked httpx.Client."""
-    import httpx
-
     return MagicMock(spec=httpx.Client)
 
 
 @pytest.fixture
 def mock_async_httpx_client():
     """Return a mocked httpx.AsyncClient."""
-    import httpx
-
     return MagicMock(spec=httpx.AsyncClient)
 
 

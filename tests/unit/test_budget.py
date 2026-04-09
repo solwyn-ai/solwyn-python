@@ -28,6 +28,7 @@ _DENY_RESPONSE = {
     "mode": "hard_deny",
     "budget_limit": 100.0,
     "current_usage": 99.5,
+    "denied_by_period": "monthly",
 }
 
 
@@ -249,6 +250,7 @@ class TestLocalEnforcement:
             "mode": "hard_deny",
             "budget_limit": 100.0,
             "current_usage": 5.0,
+            "denied_by_period": None,
         }
         mock_response.raise_for_status = MagicMock()
         with patch.object(enforcer._http, "post", return_value=mock_response):
@@ -277,6 +279,7 @@ class TestLocalEnforcement:
             "mode": "hard_deny",
             "budget_limit": 100.0,
             "current_usage": 0.0,
+            "denied_by_period": None,
         }
         mock_response.raise_for_status = MagicMock()
         with patch.object(enforcer._http, "post", return_value=mock_response):

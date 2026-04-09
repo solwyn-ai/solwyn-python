@@ -5,9 +5,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SDK_SRC = Path(__file__).parent.parent / "src" / "solwyn"
+import pytest
+
+SDK_SRC = Path(__file__).resolve().parent.parent.parent / "src" / "solwyn"
 
 
+@pytest.mark.unit
 def test_no_assert_statements_in_production_code() -> None:
     violations: list[str] = []
     for path in SDK_SRC.rglob("*.py"):

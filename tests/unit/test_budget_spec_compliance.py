@@ -52,6 +52,7 @@ def _mock_cloud_response(
         "mode": mode,
         "budget_limit": budget_limit,
         "current_usage": current_usage,
+        "denied_by_period": None if allowed else "monthly",
     }
     mock_response.raise_for_status = MagicMock()
     return mock_response

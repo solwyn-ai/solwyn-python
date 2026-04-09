@@ -109,6 +109,7 @@ class TestAnthropicMessagesProxy:
             "allowed": False,
             "remaining_budget": 0.0,
             "mode": "hard_deny",
+            "denied_by_period": "monthly",
         }
         with _mock_budget(solwyn, deny_response), pytest.raises(BudgetExceededError):
             solwyn.messages.create(
@@ -237,7 +238,8 @@ def _mock_async_budget(solwyn, response=None):
 class TestAsyncAnthropicMessagesProxy:
     """Async client.messages.create() routes through _intercepted_call."""
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_messages_create_is_intercepted(self) -> None:
         client = _mock_anthropic_client()
         client.messages.create = AsyncMockFn(
@@ -275,7 +277,8 @@ class TestAsyncAnthropicMessagesProxy:
 class TestAsyncGoogleModelsProxy:
     """Async client.models.generate_content() routes through _intercepted_call."""
 
-    @pytest.mark.anyio
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_generate_content_is_intercepted(self) -> None:
         client = _mock_google_client()
         client.models.generate_content = AsyncMockFn(
