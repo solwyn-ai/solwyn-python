@@ -13,9 +13,7 @@ class TestBudgetConfirmRoundTrip:
     """Check then confirm: the full reservation lifecycle."""
 
     @pytest.mark.integration
-    def test_confirm_cost_with_valid_reservation(
-        self, budget_enforcer: BudgetEnforcer
-    ) -> None:
+    def test_confirm_cost_with_valid_reservation(self, budget_enforcer: BudgetEnforcer) -> None:
         # Arrange — get a reservation
         result = budget_enforcer.check_budget(
             estimated_input_tokens=100,

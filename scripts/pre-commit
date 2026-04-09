@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Pre-commit hook: runs lint + format check + type check.
+# Install with: make install-hooks
+set -e
+make check

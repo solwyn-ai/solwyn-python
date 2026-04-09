@@ -53,9 +53,7 @@ class TestMetadataReporterDelivery:
     ) -> None:
         """Multiple events are batched and delivered within flush interval."""
         for i in range(10):
-            metadata_reporter.report(
-                _make_event(test_credentials.project_id, seq=i)
-            )
+            metadata_reporter.report(_make_event(test_credentials.project_id, seq=i))
 
         # Wait for flush interval to fire
         time.sleep(2.0)

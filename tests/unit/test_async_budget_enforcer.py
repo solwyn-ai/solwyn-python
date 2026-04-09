@@ -133,9 +133,7 @@ class TestAsyncFailOpen:
     async def test_allowed_with_warning(self) -> None:
         enforcer = _make_async_enforcer(fail_open=True)
 
-        with patch.object(
-            enforcer._http, "post", side_effect=httpx.ConnectError("unreachable")
-        ):
+        with patch.object(enforcer._http, "post", side_effect=httpx.ConnectError("unreachable")):
             result = await enforcer.check_budget(
                 estimated_input_tokens=500, model="gpt-4o", provider="openai"
             )
@@ -177,9 +175,7 @@ class TestAsyncConfirmCost:
         enforcer = _make_async_enforcer()
         token_details = TokenDetails(input_tokens=100, output_tokens=50)
 
-        with patch.object(
-            enforcer._http, "post", side_effect=httpx.ConnectError("unreachable")
-        ):
+        with patch.object(enforcer._http, "post", side_effect=httpx.ConnectError("unreachable")):
             # Should not raise
             await enforcer.confirm_cost("res_123", "gpt-4o", token_details)
 

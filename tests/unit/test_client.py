@@ -983,9 +983,7 @@ class TestAsyncNonStreamingInterception:
 
         with (
             patch.object(solwyn._budget._http, "post", return_value=mock_budget_response),
-            patch.object(
-                solwyn._budget, "confirm_cost", new_callable=AsyncMockFn
-            ) as mock_confirm,
+            patch.object(solwyn._budget, "confirm_cost", new_callable=AsyncMockFn) as mock_confirm,
         ):
             result = await solwyn.chat.completions.create(
                 model="gpt-4o",
