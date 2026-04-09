@@ -60,3 +60,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S101"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "tiktoken"
+ignore_missing_imports = true
