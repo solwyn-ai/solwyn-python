@@ -7,11 +7,10 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from conftest import Credentials
 
 from solwyn._types import MetadataEvent, ProviderName
 from solwyn.reporter import MetadataReporter
-
-from conftest import Credentials
 
 
 def _make_event(project_id: str, seq: int = 0) -> MetadataEvent:

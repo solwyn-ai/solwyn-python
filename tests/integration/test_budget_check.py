@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import pytest
+from conftest import Credentials
 
 from solwyn._types import BudgetMode
 from solwyn.budget import BudgetEnforcer
-
-from conftest import Credentials
 
 
 @pytest.mark.integration

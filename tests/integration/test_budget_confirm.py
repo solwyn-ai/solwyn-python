@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from conftest import SAMPLE_TOKEN_DETAILS
 
 from solwyn.budget import BudgetEnforcer
-
-from conftest import SAMPLE_TOKEN_DETAILS
 
 
 @pytest.mark.integration
