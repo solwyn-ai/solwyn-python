@@ -33,6 +33,5 @@ htmlcov/
 .env
 .env.*
 
-# Prevent accidental copy from monorepo
-CLAUDE.md
+# Claude Code local state
 .claude/
