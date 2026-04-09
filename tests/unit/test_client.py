@@ -952,3 +952,52 @@ class TestAsyncStreamingInterception:
 
         await solwyn._budget._http.aclose()
         await solwyn._reporter._http.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Async non-streaming interception
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAsyncNonStreamingInterception:
+    """Async non-streaming calls go through _intercepted_call."""
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_async_openai_non_streaming_call(self) -> None:
+        client, mock_response = _mock_openai_client()
+        # Make create return an awaitable (non-streaming)
+        client.chat.completions.create = AsyncMockFn(return_value=mock_response)
+
+        solwyn = _make_async_solwyn(client)
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        mock_budget_response = MagicMock()
+        mock_budget_response.json.return_value = ALLOW_BUDGET_RESPONSE
+        mock_budget_response.raise_for_status = MagicMock()
+
+        mock_confirm_response = AsyncMockFn()
+        mock_confirm_response.raise_for_status = MagicMock()
+
+        with (
+            patch.object(solwyn._budget._http, "post", return_value=mock_budget_response),
+            patch.object(
+                solwyn._budget, "confirm_cost", new_callable=AsyncMockFn
+            ) as mock_confirm,
+        ):
+            result = await solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+
+        # Response passes through
+        assert result is mock_response
+        # Non-streaming calls confirm_cost directly (not via reporter)
+        mock_confirm.assert_called_once()
+        # Metadata event reported
+        assert len(reported_events) == 1
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
