@@ -46,6 +46,9 @@ packages = ["src/solwyn"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "unit: marks tests as unit tests that mock all external dependencies",
+]
 
 [tool.ruff]
 line-length = 100
