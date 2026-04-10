@@ -12,6 +12,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# TokenDetails lives in a separate module to avoid a circular import:
+# _types -> TokenDetails -> (if merged here) _types.
 from solwyn._token_details import TokenDetails
 
 # ── Enums ────────────────────────────────────────────────────────────────
