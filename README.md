@@ -1,80 +1,208 @@
 # Solwyn Python SDK
 
-AI Agent Control Plane SDK — hard spending caps, automatic provider failover, per-agent cost attribution.
+Budget enforcement, circuit breaking, and usage tracking for OpenAI, Anthropic, and Google LLM clients.
 
-## Install
+[![CI](https://github.com/solwyn-ai/solwyn-python/actions/workflows/ci.yml/badge.svg)](https://github.com/solwyn-ai/solwyn-python/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/solwyn)](https://pypi.org/project/solwyn/)
+[![Python 3.11+](https://img.shields.io/pypi/pyversions/solwyn)](https://pypi.org/project/solwyn/)
+[![License](https://img.shields.io/github/license/solwyn-ai/solwyn-python)](LICENSE)
 
-```bash
+Solwyn wraps your existing LLM client. Calls go directly to the provider — the SDK only reports metadata (token counts, latency, model name) to the Solwyn API. **Prompts and responses never leave your application.**
+
+## Installation
+
+```sh
 pip install solwyn
 ```
 
-For accurate token counting with OpenAI models:
+For improved token estimation with OpenAI models:
 
-```bash
+```sh
 pip install solwyn[openai]
 ```
 
-## Quickstart
+## Quick Start
 
 ```python
 from openai import OpenAI
 from solwyn import Solwyn
 
-client = Solwyn(OpenAI())  # Wraps your existing client
+client = Solwyn(
+    OpenAI(),
+    api_key="sk_solwyn_...",
+    project_id="proj_abc12345",
+)
+
 response = client.chat.completions.create(
     model="gpt-4o",
     messages=[{"role": "user", "content": "Hello!"}],
 )
+
+client.close()
 ```
 
-That's it. Solwyn wraps your existing provider client and automatically tracks token usage, enforces budget limits, and handles provider failover — without ever seeing your prompts.
+Or use as a context manager:
 
-## Architecture
-
-```
-Your Application                          Solwyn Cloud
-┌──────────────────────────┐             ┌──────────────────┐
-│  your code               │  metadata   │  PricingService   │
-│    ↓                     │  (tokens,   │  Budget engine    │
-│  Solwyn(OpenAI())        │  latency)   │  Cost dashboard   │
-│    ↓                     │ ──────────→ │  Alerts           │
-│  LLM provider  ←─────── │ direct call │                    │
-└──────────────────────────┘             └──────────────────┘
+```python
+with Solwyn(OpenAI(), api_key="sk_solwyn_...", project_id="proj_abc12345") as client:
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello!"}],
+    )
 ```
 
-**Key principle:** The SDK is a wrapper, not a proxy. LLM calls go directly from your application to the provider. Only metadata (token counts, latency, model name) is sent to Solwyn's servers.
+## Providers
 
-## What data does the SDK send?
+### OpenAI
 
-The SDK sends a `MetadataEvent` after each LLM call containing **only**:
+```python
+from openai import OpenAI
+from solwyn import Solwyn
+
+client = Solwyn(OpenAI(), api_key="sk_solwyn_...", project_id="proj_abc12345")
+response = client.chat.completions.create(model="gpt-4o", messages=[...])
+```
+
+### Anthropic
+
+```python
+from anthropic import Anthropic
+from solwyn import Solwyn
+
+client = Solwyn(Anthropic(), api_key="sk_solwyn_...", project_id="proj_abc12345")
+response = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=1024, messages=[...])
+```
+
+### Google Gemini
+
+```python
+from google import genai
+from solwyn import Solwyn
+
+client = Solwyn(genai.Client(api_key="..."), api_key="sk_solwyn_...", project_id="proj_abc12345")
+response = client.models.generate_content(model="gemini-2.0-flash", contents="Hello!")
+```
+
+## Async
+
+```python
+from openai import AsyncOpenAI
+from solwyn import AsyncSolwyn
+
+async with AsyncSolwyn(
+    AsyncOpenAI(),
+    api_key="sk_solwyn_...",
+    project_id="proj_abc12345",
+) as client:
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello!"}],
+    )
+```
+
+## Streaming
+
+Pass `stream=True` as you normally would. Solwyn wraps the stream transparently and reports usage when it completes:
+
+```python
+stream = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True,
+)
+
+for chunk in stream:
+    print(chunk.choices[0].delta.content or "", end="")
+```
+
+## Budget Enforcement
+
+Set `budget_mode` to control spending:
+
+```python
+client = Solwyn(
+    OpenAI(),
+    api_key="sk_solwyn_...",
+    project_id="proj_abc12345",
+    budget_mode="hard_deny",
+)
+```
+
+| Mode | Behavior |
+|------|----------|
+| `alert_only` | Log a warning when budget is exceeded (default) |
+| `hard_deny` | Raise `BudgetExceededError` and block the call |
+
+```python
+from solwyn import BudgetExceededError
+
+try:
+    response = client.chat.completions.create(model="gpt-4o", messages=[...])
+except BudgetExceededError as e:
+    print(f"Budget limit: ${e.budget_limit}, usage: ${e.current_usage}")
+```
+
+## Configuration
+
+| Parameter | Env Var | Default | Description |
+|-----------|---------|---------|-------------|
+| `api_key` | `SOLWYN_API_KEY` | *required* | Solwyn API key |
+| `project_id` | `SOLWYN_PROJECT_ID` | *required* | Project identifier |
+| `api_url` | `SOLWYN_API_URL` | `https://api.solwyn.ai` | Solwyn API endpoint |
+| `fail_open` | `SOLWYN_FAIL_OPEN` | `True` | Allow LLM calls when Solwyn API is unreachable |
+| `budget_mode` | `SOLWYN_BUDGET_MODE` | `alert_only` | Budget enforcement mode |
+| `fallback_provider` | `SOLWYN_FALLBACK_PROVIDER` | `None` | Failover provider when primary circuit breaks |
+
+## Error Handling
+
+All SDK errors inherit from `SolwynError`:
+
+| Exception | Raised when |
+|-----------|-------------|
+| `BudgetExceededError` | Budget exceeded in `hard_deny` mode |
+| `ProviderUnavailableError` | Circuit breaker is open and no fallback exists |
+| `ConfigurationError` | Invalid API key or project ID format |
+
+Provider errors (e.g., `openai.RateLimitError`) pass through unmodified.
+
+## Data Transparency
+
+The SDK sends a `MetadataEvent` after each LLM call. This is everything it transmits:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `project_id` | string | Your project identifier |
-| `model` | string | LLM model name (e.g. `gpt-4o`) |
-| `provider` | string | Provider name (`openai`, `anthropic`, `google`) |
-| `input_tokens` | int | Input token count |
-| `output_tokens` | int | Output token count |
-| `token_details` | object | Detailed token breakdown (cached, reasoning, audio, etc.) |
-| `latency_ms` | float | Call latency in milliseconds |
-| `status` | string | Call outcome (`success`, `error`, `budget_denied`) |
-| `is_failover` | bool | Whether a fallback provider was used |
-| `sdk_instance_id` | string | Per-process UUID for deduplication (not user tracking) |
-| `timestamp` | datetime | When the call completed |
+| `project_id` | `str` | Project identifier |
+| `model` | `str` | Model name (e.g., `gpt-4o`) |
+| `provider` | `str` | `openai`, `anthropic`, or `google` |
+| `input_tokens` | `int` | Input token count |
+| `output_tokens` | `int` | Output token count |
+| `token_details` | `object` | Breakdown: cached, reasoning, audio tokens |
+| `latency_ms` | `float` | Call duration in milliseconds |
+| `status` | `str` | `success`, `error`, or `budget_denied` |
+| `is_failover` | `bool` | Whether a fallback provider was used |
+| `sdk_instance_id` | `str` | Per-process UUID for deduplication |
+| `timestamp` | `datetime` | When the call completed (UTC) |
 
-**The SDK never captures, logs, or transmits prompts or responses.** This is enforced by structural tests in the codebase. See [`src/solwyn/_privacy.py`](src/solwyn/_privacy.py) for the implementation.
+**The SDK never captures, logs, or transmits prompts or responses.** This is enforced by [structural tests](tests/unit/test_privacy_firewall.py) and the [privacy module](src/solwyn/_privacy.py).
 
-## Supported Providers
+## Requirements
 
-- **OpenAI** — GPT-4o, GPT-4, GPT-3.5, o1, o3, and all chat completion models
-- **Anthropic** — Claude 4, Claude 3.5, and all messages API models
-- **Google/Gemini** — Gemini 2.0, Gemini 1.5, and all generate_content models
+Python 3.11+
+
+## Contributing
+
+```sh
+make install          # install in dev mode
+make install-hooks    # install pre-commit hook
+make check            # lint + format + typecheck
+make test             # run unit tests
+```
 
 ## Links
 
 - [Documentation](https://docs.solwyn.ai)
 - [Solwyn Cloud](https://solwyn.ai) — Dashboard, alerts, and analytics
-- [MPI.sh](https://mpi.sh) — Free LLM API pricing comparison
+- [MPI.sh](https://mpi.sh) — LLM API pricing comparison
 
 ## License
 
