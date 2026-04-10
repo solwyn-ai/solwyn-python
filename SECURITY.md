@@ -4,7 +4,7 @@
 
 If you discover a security vulnerability in the Solwyn SDK, please report it responsibly.
 
-**Email:** dev@solwyn.io
+**Email:** hello@solwyn.ai
 
 Please include:
 - Description of the vulnerability

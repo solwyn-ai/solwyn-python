@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "AI Agent Control Plane SDK — hard spending caps, automatic failover, per-agent cost attribution"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-authors = [{ name = "Solwyn", email = "dev@solwyn.io" }]
+authors = [{ name = "Solwyn", email = "hello@solwyn.ai" }]
 readme = "README.md"
 keywords = ["ai", "llm", "observability", "cost-management", "agent"]
 classifiers = [
