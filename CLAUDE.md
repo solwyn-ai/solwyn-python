@@ -5,11 +5,11 @@ Drop-in wrapper for `openai`, `anthropic`, and `google.generativeai` clients. Ex
 ## Commands
 
 ```bash
-uv run pytest tests/ -m unit              # unit tests (~1.5s)
-uv run pytest tests/ -m integration -v    # integration tests (needs API at localhost:8080)
-uv run ruff check src/ tests/             # lint
-uv run ruff format --check src/ tests/    # format check
-uv run mypy src/solwyn/                   # type check
+make check                                # full quality gate (lint + format + typecheck)
+make test                                 # unit tests (~1.5s)
+make test-integration                     # integration tests (needs API at localhost:8080)
+make install                              # install in dev mode
+make install-hooks                        # install pre-commit hook
 ```
 
 ## Architecture
@@ -31,12 +31,12 @@ _SolwynBase          # Shared sans-I/O logic (config, token estimation, metadata
 
 ## Rules
 
-- NEVER import from `solwyn_api` or `api/`
 - NEVER capture, log, or transmit prompts or responses
 - All business logic in `_base.py` (sans-I/O); client classes are thin I/O wrappers
 - httpx for HTTP (already a transitive dep of openai/anthropic SDKs)
 - tiktoken is optional — always provide heuristic fallback
 - Runtime invariants use `raise RuntimeError(...)`, not `assert` — Python's `-O` strips asserts. Enforced by `tests/unit/test_no_production_asserts.py`.
+- Pydantic v2 only — `ConfigDict(...)`, `@model_validator`, `.model_dump()`. No v1 patterns.
 
 ## Key Conventions
 
