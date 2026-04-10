@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from solwyn._types import BudgetMode, ProviderName
 from solwyn._validation import validate_api_key_format, validate_project_id
@@ -51,7 +51,7 @@ class SolwynConfig(BaseModel):
     reporter_max_queue_size: int = 10_000
     reporter_max_in_flight: int = 3
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="before")
     @classmethod

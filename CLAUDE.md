@@ -15,7 +15,7 @@ uv run mypy src/solwyn/                   # type check
 ## Architecture
 
 ```
-Solwyn SDK (this repo)                   Solwyn Cloud API (../core)
+Solwyn SDK (this repo)                   Solwyn Cloud API
 ┌──────────────────────┐                ┌─────────────────┐
 │  your code           │  token counts  │  PricingService  │
 │    ↓                 │  (no cost)     │  Budget state    │

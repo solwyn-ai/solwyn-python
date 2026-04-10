@@ -1,6 +1,6 @@
 """Project ID and API key validation.
 
-Vendored from solwyn_shared for standalone SDK distribution.
+API key and project ID format validation.
 
 Security features applied to every validator:
 - Unicode NFC normalization to prevent homograph attacks

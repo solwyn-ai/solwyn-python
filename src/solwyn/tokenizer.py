@@ -4,14 +4,9 @@ Uses tiktoken (cl100k_base) for OpenAI models when available,
 heuristic estimation for Anthropic models, and character-based
 fallback when tiktoken is not installed.
 
-Extracted from solwyn-core ``tokenizers.py`` with the following changes:
 - tiktoken is optional (import guarded)
-- stdlib logging instead of custom logger
 - optional ``anthropic_client`` parameter for exact counting
-- no global singleton or module-level convenience functions
-- provider is passed explicitly by the caller; the tokenizer does
-  not re-detect it (that would require importing the provider
-  registry, creating a circular dependency)
+- provider is passed explicitly by the caller (no auto-detection)
 """
 
 from __future__ import annotations

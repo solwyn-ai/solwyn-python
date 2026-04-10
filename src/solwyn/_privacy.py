@@ -7,7 +7,7 @@ content directly. Code here must obey three rules:
 
   1. NEVER pass prompt content to a logger (`logger.*`) — not even in
      a formatted string, not even at DEBUG level. CI enforces this
-     with `tests/test_privacy_firewall.py`.
+     with `tests/unit/test_privacy_firewall.py`.
   2. NEVER store prompt content on a long-lived object — compute and
      discard within the current function call.
   3. NEVER include prompt content in exception arguments. If a

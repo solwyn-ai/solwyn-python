@@ -1,6 +1,6 @@
 """TokenDetails — normalized token usage breakdown.
 
-Vendored from solwyn_shared for standalone SDK distribution.
+Normalized token usage breakdown for one LLM call.
 """
 
 from pydantic import BaseModel, ConfigDict, Field

@@ -1,6 +1,6 @@
 """Vendored enums and wire-format models for SDK <-> API contracts.
 
-Cherry-picked from solwyn_shared for standalone SDK distribution.
+Pydantic models for API request/response contracts.
 Excludes API-internal types: ProjectConfig, ProviderHealth,
 NotificationEventType, Environment, BudgetPeriod.
 """
