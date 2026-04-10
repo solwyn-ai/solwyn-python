@@ -1,0 +1,40 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check src/ tests/
+      - run: ruff format --check src/ tests/
+      - run: mypy src/solwyn/
+      - run: pytest tests/ -m unit -v --tb=short
+
+  integration:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'run-integration')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/ -m integration -v --tb=short
+        env:
+          SOLWYN_TEST_API_URL: ${{ secrets.SOLWYN_TEST_API_URL }}
+          SOLWYN_TEST_API_KEY: ${{ secrets.SOLWYN_TEST_API_KEY }}
+          SOLWYN_TEST_PROJECT_ID: ${{ secrets.SOLWYN_TEST_PROJECT_ID }}

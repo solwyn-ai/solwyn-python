@@ -1,0 +1,121 @@
+"""OpenAI provider adapter — token extraction only, no pricing.
+
+Handles two OpenAI API response shapes:
+- Chat Completions API: usage.prompt_tokens / usage.completion_tokens
+- Responses API:        usage.input_tokens  / usage.output_tokens
+
+Detail sub-objects (prompt_tokens_details, completion_tokens_details,
+input_tokens_details, output_tokens_details) may be None on older responses
+or when not requested — all missing fields default to 0.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from solwyn._token_details import TokenDetails
+
+
+def _extract_openai_usage(response: Any) -> TokenDetails:
+    """Extract token usage from a Chat Completions or Responses API response.
+
+    Module-level so both OpenAIAdapter and OpenAIStreamAccumulator can call it
+    without instantiating an adapter. Returns TokenDetails() with all zeros
+    when usage is unavailable. Never raises.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return TokenDetails()
+
+    # Detect which API shape we have
+    if hasattr(usage, "prompt_tokens"):
+        return _extract_chat_completions(usage)
+    if hasattr(usage, "input_tokens"):
+        return _extract_responses_api(usage)
+
+    return TokenDetails()
+
+
+def _extract_chat_completions(usage: Any) -> TokenDetails:
+    """Extract from Chat Completions API usage object."""
+    prompt_details = getattr(usage, "prompt_tokens_details", None)
+    completion_details = getattr(usage, "completion_tokens_details", None)
+
+    return TokenDetails(
+        input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+        output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        cached_input_tokens=getattr(prompt_details, "cached_tokens", 0) or 0,
+        audio_input_tokens=getattr(prompt_details, "audio_tokens", 0) or 0,
+        reasoning_tokens=getattr(completion_details, "reasoning_tokens", 0) or 0,
+        audio_output_tokens=getattr(completion_details, "audio_tokens", 0) or 0,
+        accepted_prediction_tokens=getattr(completion_details, "accepted_prediction_tokens", 0)
+        or 0,
+        rejected_prediction_tokens=getattr(completion_details, "rejected_prediction_tokens", 0)
+        or 0,
+    )
+
+
+def _extract_responses_api(usage: Any) -> TokenDetails:
+    """Extract from Responses API usage object."""
+    input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "output_tokens_details", None)
+
+    return TokenDetails(
+        input_tokens=getattr(usage, "input_tokens", 0) or 0,
+        output_tokens=getattr(usage, "output_tokens", 0) or 0,
+        cached_input_tokens=getattr(input_details, "cached_tokens", 0) or 0,
+        reasoning_tokens=getattr(output_details, "reasoning_tokens", 0) or 0,
+    )
+
+
+class OpenAIAdapter:
+    """Extracts normalized TokenDetails from OpenAI API responses."""
+
+    @property
+    def name(self) -> str:
+        return "openai"
+
+    def detect_client(self, client: Any) -> bool:
+        """Return True if the client's module path contains 'openai'."""
+        return "openai" in getattr(type(client), "__module__", "")
+
+    def detect_model(self, model: str) -> bool:
+        """Return True for gpt-*, o3*, o4* model prefixes."""
+        return model.startswith("gpt-") or model.startswith("o3") or model.startswith("o4")
+
+    def extract_usage(self, response: Any) -> TokenDetails:
+        """Extract token usage from a Chat Completions or Responses API response."""
+        return _extract_openai_usage(response)
+
+    def prepare_streaming(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Inject stream_options so usage appears in the final chunk."""
+        kwargs = dict(kwargs)
+        stream_options = dict(kwargs.get("stream_options") or {})
+        stream_options["include_usage"] = True
+        kwargs["stream_options"] = stream_options
+        return kwargs
+
+    def create_stream_accumulator(self) -> OpenAIStreamAccumulator:
+        return OpenAIStreamAccumulator()
+
+
+class OpenAIStreamAccumulator:
+    """Accumulates usage from OpenAI streaming chunks.
+
+    OpenAI includes usage only in the final chunk when the caller sets
+    stream_options={"include_usage": True}. We save that chunk and
+    delegate to the same extraction logic as non-streaming responses.
+    """
+
+    def __init__(self) -> None:
+        self._usage_chunk: Any | None = None
+
+    def observe(self, chunk: Any) -> None:
+        usage = getattr(chunk, "usage", None)
+        if usage is not None:
+            self._usage_chunk = chunk
+
+    def finalize(self) -> TokenDetails:
+        if self._usage_chunk is None:
+            return TokenDetails()
+        return _extract_openai_usage(self._usage_chunk)
