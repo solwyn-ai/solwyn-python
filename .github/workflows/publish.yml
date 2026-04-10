@@ -18,9 +18,6 @@ jobs:
   publish:
     needs: test
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/solwyn
     permissions:
       id-token: write
     steps:
