@@ -1,4 +1,3 @@
-# sdks/python/src/solwyn/stream.py
 """Stream wrappers for intercepting streaming LLM responses.
 
 These wrappers yield every chunk unchanged to the user while a

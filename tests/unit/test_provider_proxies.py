@@ -1,4 +1,3 @@
-# sdks/python/tests/test_provider_proxies.py
 """Tests for provider-native API surface interception.
 
 Ensures client.messages.create() (Anthropic) and

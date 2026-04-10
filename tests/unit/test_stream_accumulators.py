@@ -1,4 +1,3 @@
-# sdks/python/tests/test_stream_accumulators.py
 """Tests for provider-specific streaming usage accumulators."""
 
 from __future__ import annotations

@@ -1,4 +1,3 @@
-# sdks/python/tests/test_stream.py
 """Tests for SyncStreamWrapper and AsyncStreamWrapper."""
 
 from __future__ import annotations
