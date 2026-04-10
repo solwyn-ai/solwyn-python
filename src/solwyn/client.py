@@ -95,8 +95,8 @@ class Solwyn(_SolwynBase):
         self,
         client: Any,
         *,
-        api_key: str,
-        project_id: str,
+        api_key: str | None = None,
+        project_id: str | None = None,
         **config_kwargs: Any,
     ) -> None:
         # Detect provider and store adapter for usage extraction
@@ -104,13 +104,14 @@ class Solwyn(_SolwynBase):
         self._detected_provider = ProviderName(self._adapter.name)
         self._client = client
 
-        # Build config
-        config = SolwynConfig(
-            api_key=api_key,
-            project_id=project_id,
-            primary_provider=self._detected_provider,
-            **config_kwargs,
-        )
+        # Build config — SolwynConfig._load_from_env fills missing
+        # values from SOLWYN_API_KEY / SOLWYN_PROJECT_ID env vars.
+        cfg_kwargs: dict[str, Any] = {"primary_provider": self._detected_provider, **config_kwargs}
+        if api_key is not None:
+            cfg_kwargs["api_key"] = api_key
+        if project_id is not None:
+            cfg_kwargs["project_id"] = project_id
+        config = SolwynConfig(**cfg_kwargs)
         super().__init__(config)
 
         # Budget enforcer
@@ -382,8 +383,8 @@ class AsyncSolwyn(_SolwynBase):
         self,
         client: Any,
         *,
-        api_key: str,
-        project_id: str,
+        api_key: str | None = None,
+        project_id: str | None = None,
         **config_kwargs: Any,
     ) -> None:
         # Detect provider and store adapter for usage extraction
@@ -391,12 +392,12 @@ class AsyncSolwyn(_SolwynBase):
         self._detected_provider = ProviderName(self._adapter.name)
         self._client = client
 
-        config = SolwynConfig(
-            api_key=api_key,
-            project_id=project_id,
-            primary_provider=self._detected_provider,
-            **config_kwargs,
-        )
+        cfg_kwargs: dict[str, Any] = {"primary_provider": self._detected_provider, **config_kwargs}
+        if api_key is not None:
+            cfg_kwargs["api_key"] = api_key
+        if project_id is not None:
+            cfg_kwargs["project_id"] = project_id
+        config = SolwynConfig(**cfg_kwargs)
         super().__init__(config)
 
         self._budget = AsyncBudgetEnforcer(

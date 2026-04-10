@@ -153,6 +153,17 @@ except BudgetExceededError as e:
 | `budget_mode` | `SOLWYN_BUDGET_MODE` | `alert_only` | Budget enforcement mode |
 | `fallback_provider` | `SOLWYN_FALLBACK_PROVIDER` | `None` | Failover provider when primary circuit breaks |
 
+Use env vars to avoid passing credentials in code:
+
+```sh
+export SOLWYN_API_KEY="sk_solwyn_..."
+export SOLWYN_PROJECT_ID="proj_abc12345"
+```
+
+```python
+client = Solwyn(OpenAI())  # picks up from environment
+```
+
 ## Error Handling
 
 All SDK errors inherit from `SolwynError`:
