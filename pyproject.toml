@@ -1,6 +1,6 @@
 [project]
 name = "solwyn"
-version = "0.1.0"
+dynamic = ["version"]
 description = "AI Agent Control Plane SDK — hard spending caps, automatic failover, per-agent cost attribution"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -37,8 +37,12 @@ Repository = "https://github.com/solwyn-ai/solwyn-python"
 "Model Pricing" = "https://mpi.sh"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0.dev0"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/solwyn"]

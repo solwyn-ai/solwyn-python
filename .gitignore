@@ -33,5 +33,8 @@ htmlcov/
 .env
 .env.*
 
+# Generated version file (hatch-vcs)
+src/solwyn/_version.py
+
 # Claude Code local state
 .claude/

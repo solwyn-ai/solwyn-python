@@ -641,7 +641,6 @@ wheels = [
 
 [[package]]
 name = "solwyn"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -669,7 +668,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "tiktoken", marker = "extra == 'openai'", specifier = ">=0.7" },
 ]
-provides-extras = ["openai", "dev"]
+provides-extras = ["dev", "openai"]
 
 [[package]]
 name = "tiktoken"
