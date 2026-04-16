@@ -241,24 +241,23 @@ class Solwyn(_SolwynBase):
             kwargs = self._adapter.prepare_streaming(kwargs)
 
         # 5. Call underlying client
-        def dispatch(kw: dict[str, Any]) -> Any:
+        start_time = time.monotonic()
+        try:
             if self._detected_provider == ProviderName.OPENAI:
-                return self._client.chat.completions.create(**kw)
+                response = self._client.chat.completions.create(**kwargs)
             elif self._detected_provider == ProviderName.ANTHROPIC:
-                return self._client.messages.create(**kw)
+                response = self._client.messages.create(**kwargs)
             elif _force_stream:
+                # _force_stream is only passed by _SyncModelsProxy.generate_content_stream(),
+                # which is only constructed for Google clients.
                 if self._detected_provider != ProviderName.GOOGLE:
                     raise RuntimeError(
                         f"_force_stream is Google-only but provider is {self._detected_provider}"
                     )
-                return self._client.models.generate_content_stream(**kw)
+                response = self._client.models.generate_content_stream(**kwargs)
             else:
-                return self._client.models.generate_content(**kw)
-
-        start_time = time.monotonic()
-        try:
-            response = dispatch(kwargs)
-        except Exception as primary_exc:
+                response = self._client.models.generate_content(**kwargs)
+        except Exception:
             elapsed_ms = (time.monotonic() - start_time) * 1000
             cb = self._get_circuit_breaker(selected_provider)
             cb.record_failure()
@@ -275,21 +274,7 @@ class Solwyn(_SolwynBase):
                 is_failover=is_failover,
             )
             self._reporter.report(event)
-
-            # Retry with fallback model if configured
-            if self._should_retry_with_fallback(model):
-                fallback_kwargs = self._prepare_fallback_kwargs(kwargs)
-                model = self._config.fallback_model
-                is_failover = True
-                start_time = time.monotonic()
-                try:
-                    response = dispatch(fallback_kwargs)
-                except Exception:
-                    cb.record_failure()
-                    raise primary_exc from None
-                # Falls through to post-processing (streaming or non-streaming)
-            else:
-                raise
+            raise
 
         # 6. Streaming vs non-streaming post-processing
         if is_streaming:
@@ -532,24 +517,23 @@ class AsyncSolwyn(_SolwynBase):
         if is_streaming:
             kwargs = self._adapter.prepare_streaming(kwargs)
 
-        async def dispatch(kw: dict[str, Any]) -> Any:
+        start_time = time.monotonic()
+        try:
             if self._detected_provider == ProviderName.OPENAI:
-                return await self._client.chat.completions.create(**kw)
+                response = await self._client.chat.completions.create(**kwargs)
             elif self._detected_provider == ProviderName.ANTHROPIC:
-                return await self._client.messages.create(**kw)
+                response = await self._client.messages.create(**kwargs)
             elif _force_stream:
+                # _force_stream is only passed by _AsyncModelsProxy.generate_content_stream(),
+                # which is only constructed for Google clients.
                 if self._detected_provider != ProviderName.GOOGLE:
                     raise RuntimeError(
                         f"_force_stream is Google-only but provider is {self._detected_provider}"
                     )
-                return await self._client.models.generate_content_stream(**kw)
+                response = await self._client.models.generate_content_stream(**kwargs)
             else:
-                return await self._client.models.generate_content(**kw)
-
-        start_time = time.monotonic()
-        try:
-            response = await dispatch(kwargs)
-        except Exception as primary_exc:
+                response = await self._client.models.generate_content(**kwargs)
+        except Exception:
             elapsed_ms = (time.monotonic() - start_time) * 1000
             cb = self._get_circuit_breaker(selected_provider)
             cb.record_failure()
@@ -566,21 +550,7 @@ class AsyncSolwyn(_SolwynBase):
                 is_failover=is_failover,
             )
             self._reporter.report(event)
-
-            # Retry with fallback model if configured
-            if self._should_retry_with_fallback(model):
-                fallback_kwargs = self._prepare_fallback_kwargs(kwargs)
-                model = self._config.fallback_model
-                is_failover = True
-                start_time = time.monotonic()
-                try:
-                    response = await dispatch(fallback_kwargs)
-                except Exception:
-                    cb.record_failure()
-                    raise primary_exc from None
-                # Falls through to post-processing (streaming or non-streaming)
-            else:
-                raise
+            raise
 
         if is_streaming:
             accumulator = self._adapter.create_stream_accumulator()
