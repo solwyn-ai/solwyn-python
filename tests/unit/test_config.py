@@ -15,7 +15,7 @@ from conftest import VALID_API_KEY, VALID_PROJECT_ID
 from pydantic import ValidationError
 
 from solwyn._types import BudgetMode
-from solwyn.client import Solwyn
+from solwyn.client import AsyncSolwyn, Solwyn
 from solwyn.exceptions import ConfigurationError, SolwynError
 
 
@@ -240,3 +240,42 @@ class TestConfigurationErrorFromBadCredentials:
         client = _mock_openai_client()
         with pytest.raises(SolwynError):
             Solwyn(client, api_key="bad_key", project_id=VALID_PROJECT_ID)
+
+
+# ---------------------------------------------------------------------------
+# AsyncSolwyn constructor parity
+# ---------------------------------------------------------------------------
+
+
+def _make_async_solwyn(client, **config_kwargs):
+    """Create an AsyncSolwyn wrapper (no thread patching needed — async reporter is lazy)."""
+    return AsyncSolwyn(client, **config_kwargs)
+
+
+@pytest.mark.unit
+class TestAsyncSolwynConstructors:
+    """AsyncSolwyn constructor shares the same config path as Solwyn."""
+
+    @pytest.mark.asyncio
+    async def test_async_env_vars_populate_config(self, monkeypatch) -> None:
+        """AsyncSolwyn loads SOLWYN_API_KEY and SOLWYN_PROJECT_ID from env."""
+        monkeypatch.setenv("SOLWYN_API_KEY", VALID_API_KEY)
+        monkeypatch.setenv("SOLWYN_PROJECT_ID", VALID_PROJECT_ID)
+
+        client = _mock_openai_client()
+        solwyn = _make_async_solwyn(client)
+
+        assert solwyn._config.api_key == VALID_API_KEY
+        assert solwyn._config.project_id == VALID_PROJECT_ID
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    def test_async_bad_api_key_raises_configuration_error(self) -> None:
+        """AsyncSolwyn raises ConfigurationError for malformed api_key."""
+        client = _mock_openai_client()
+        with pytest.raises(ConfigurationError) as exc_info:
+            AsyncSolwyn(client, api_key="bad_key", project_id=VALID_PROJECT_ID)
+        assert exc_info.value.field == "api_key"
+        assert isinstance(exc_info.value.message, str)
+        assert len(exc_info.value.message) > 0
