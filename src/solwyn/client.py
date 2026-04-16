@@ -26,6 +26,8 @@ import logging
 import time
 from typing import Any
 
+from pydantic import ValidationError
+
 from solwyn._base import _SolwynBase
 from solwyn._privacy import estimate_content_length, estimate_tokens_from_length
 from solwyn._proxies import (
@@ -44,7 +46,7 @@ from solwyn.budget import (
     BudgetEnforcer,
 )
 from solwyn.config import SolwynConfig
-from solwyn.exceptions import BudgetExceededError
+from solwyn.exceptions import BudgetExceededError, ConfigurationError
 from solwyn.providers import get_adapter_for_client
 from solwyn.reporter import AsyncMetadataReporter, MetadataReporter
 from solwyn.stream import AsyncStreamWrapper, SyncStreamWrapper
@@ -111,7 +113,14 @@ class Solwyn(_SolwynBase):
             cfg_kwargs["api_key"] = api_key
         if project_id is not None:
             cfg_kwargs["project_id"] = project_id
-        config = SolwynConfig(**cfg_kwargs)
+        try:
+            config = SolwynConfig(**cfg_kwargs)
+        except ValidationError as exc:
+            first = exc.errors()[0] if exc.errors() else None
+            raise ConfigurationError(
+                first["msg"] if first else str(exc),
+                field=str(first["loc"][-1]) if first else None,
+            ) from exc
         super().__init__(config)
 
         # Budget enforcer
@@ -397,7 +406,14 @@ class AsyncSolwyn(_SolwynBase):
             cfg_kwargs["api_key"] = api_key
         if project_id is not None:
             cfg_kwargs["project_id"] = project_id
-        config = SolwynConfig(**cfg_kwargs)
+        try:
+            config = SolwynConfig(**cfg_kwargs)
+        except ValidationError as exc:
+            first = exc.errors()[0] if exc.errors() else None
+            raise ConfigurationError(
+                first["msg"] if first else str(exc),
+                field=str(first["loc"][-1]) if first else None,
+            ) from exc
         super().__init__(config)
 
         self._budget = AsyncBudgetEnforcer(

@@ -35,3 +35,6 @@ htmlcov/
 
 # Claude Code local state
 .claude/
+
+# Git worktrees
+.worktrees/
