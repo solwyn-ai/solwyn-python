@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from conftest import VALID_API_KEY, VALID_PROJECT_ID
-from pydantic import ValidationError
 
 from solwyn._types import BudgetMode
 from solwyn.client import AsyncSolwyn, Solwyn
@@ -84,20 +83,22 @@ class TestEnvVarConstruction:
         solwyn._budget._http.close()
 
     def test_missing_api_key_env_var_raises(self, monkeypatch) -> None:
-        """No SOLWYN_API_KEY in env and no kwarg -> ValidationError."""
+        """No SOLWYN_API_KEY in env and no kwarg -> ConfigurationError."""
         monkeypatch.setenv("SOLWYN_PROJECT_ID", VALID_PROJECT_ID)
 
         client = _mock_openai_client()
-        with pytest.raises(ValidationError):
+        with pytest.raises(ConfigurationError) as exc_info:
             _make_solwyn(client)
+        assert exc_info.value.field == "api_key"
 
     def test_missing_project_id_env_var_raises(self, monkeypatch) -> None:
-        """No SOLWYN_PROJECT_ID in env and no kwarg -> ValidationError."""
+        """No SOLWYN_PROJECT_ID in env and no kwarg -> ConfigurationError."""
         monkeypatch.setenv("SOLWYN_API_KEY", VALID_API_KEY)
 
         client = _mock_openai_client()
-        with pytest.raises(ValidationError):
+        with pytest.raises(ConfigurationError) as exc_info:
             _make_solwyn(client)
+        assert exc_info.value.field == "project_id"
 
     def test_api_url_loads_from_env(self, monkeypatch) -> None:
         """SOLWYN_API_URL env var overrides the default api_url."""

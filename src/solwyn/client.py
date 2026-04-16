@@ -26,6 +26,8 @@ import logging
 import time
 from typing import Any
 
+from pydantic import ValidationError
+
 from solwyn._base import _SolwynBase
 from solwyn._privacy import estimate_content_length, estimate_tokens_from_length
 from solwyn._proxies import (
@@ -44,7 +46,7 @@ from solwyn.budget import (
     BudgetEnforcer,
 )
 from solwyn.config import SolwynConfig
-from solwyn.exceptions import BudgetExceededError
+from solwyn.exceptions import BudgetExceededError, ConfigurationError
 from solwyn.providers import get_adapter_for_client
 from solwyn.reporter import AsyncMetadataReporter, MetadataReporter
 from solwyn.stream import AsyncStreamWrapper, SyncStreamWrapper
@@ -111,7 +113,14 @@ class Solwyn(_SolwynBase):
             cfg_kwargs["api_key"] = api_key
         if project_id is not None:
             cfg_kwargs["project_id"] = project_id
-        config = SolwynConfig(**cfg_kwargs)
+        try:
+            config = SolwynConfig(**cfg_kwargs)
+        except ValidationError as exc:
+            first = exc.errors()[0] if exc.errors() else None
+            raise ConfigurationError(
+                first["msg"] if first else str(exc),
+                field=str(first["loc"][-1]) if first else None,
+            ) from exc
         super().__init__(config)
 
         # Budget enforcer
@@ -232,23 +241,24 @@ class Solwyn(_SolwynBase):
             kwargs = self._adapter.prepare_streaming(kwargs)
 
         # 5. Call underlying client
-        start_time = time.monotonic()
-        try:
+        def dispatch(kw: dict[str, Any]) -> Any:
             if self._detected_provider == ProviderName.OPENAI:
-                response = self._client.chat.completions.create(**kwargs)
+                return self._client.chat.completions.create(**kw)
             elif self._detected_provider == ProviderName.ANTHROPIC:
-                response = self._client.messages.create(**kwargs)
+                return self._client.messages.create(**kw)
             elif _force_stream:
-                # _force_stream is only passed by _SyncModelsProxy.generate_content_stream(),
-                # which is only constructed for Google clients.
                 if self._detected_provider != ProviderName.GOOGLE:
                     raise RuntimeError(
                         f"_force_stream is Google-only but provider is {self._detected_provider}"
                     )
-                response = self._client.models.generate_content_stream(**kwargs)
+                return self._client.models.generate_content_stream(**kw)
             else:
-                response = self._client.models.generate_content(**kwargs)
-        except Exception:
+                return self._client.models.generate_content(**kw)
+
+        start_time = time.monotonic()
+        try:
+            response = dispatch(kwargs)
+        except Exception as primary_exc:
             elapsed_ms = (time.monotonic() - start_time) * 1000
             cb = self._get_circuit_breaker(selected_provider)
             cb.record_failure()
@@ -265,7 +275,21 @@ class Solwyn(_SolwynBase):
                 is_failover=is_failover,
             )
             self._reporter.report(event)
-            raise
+
+            # Retry with fallback model if configured
+            if self._should_retry_with_fallback(model):
+                fallback_kwargs = self._prepare_fallback_kwargs(kwargs)
+                model = self._config.fallback_model
+                is_failover = True
+                start_time = time.monotonic()
+                try:
+                    response = dispatch(fallback_kwargs)
+                except Exception:
+                    cb.record_failure()
+                    raise primary_exc from None
+                # Falls through to post-processing (streaming or non-streaming)
+            else:
+                raise
 
         # 6. Streaming vs non-streaming post-processing
         if is_streaming:
@@ -397,7 +421,14 @@ class AsyncSolwyn(_SolwynBase):
             cfg_kwargs["api_key"] = api_key
         if project_id is not None:
             cfg_kwargs["project_id"] = project_id
-        config = SolwynConfig(**cfg_kwargs)
+        try:
+            config = SolwynConfig(**cfg_kwargs)
+        except ValidationError as exc:
+            first = exc.errors()[0] if exc.errors() else None
+            raise ConfigurationError(
+                first["msg"] if first else str(exc),
+                field=str(first["loc"][-1]) if first else None,
+            ) from exc
         super().__init__(config)
 
         self._budget = AsyncBudgetEnforcer(
@@ -501,23 +532,24 @@ class AsyncSolwyn(_SolwynBase):
         if is_streaming:
             kwargs = self._adapter.prepare_streaming(kwargs)
 
-        start_time = time.monotonic()
-        try:
+        async def dispatch(kw: dict[str, Any]) -> Any:
             if self._detected_provider == ProviderName.OPENAI:
-                response = await self._client.chat.completions.create(**kwargs)
+                return await self._client.chat.completions.create(**kw)
             elif self._detected_provider == ProviderName.ANTHROPIC:
-                response = await self._client.messages.create(**kwargs)
+                return await self._client.messages.create(**kw)
             elif _force_stream:
-                # _force_stream is only passed by _AsyncModelsProxy.generate_content_stream(),
-                # which is only constructed for Google clients.
                 if self._detected_provider != ProviderName.GOOGLE:
                     raise RuntimeError(
                         f"_force_stream is Google-only but provider is {self._detected_provider}"
                     )
-                response = await self._client.models.generate_content_stream(**kwargs)
+                return await self._client.models.generate_content_stream(**kw)
             else:
-                response = await self._client.models.generate_content(**kwargs)
-        except Exception:
+                return await self._client.models.generate_content(**kw)
+
+        start_time = time.monotonic()
+        try:
+            response = await dispatch(kwargs)
+        except Exception as primary_exc:
             elapsed_ms = (time.monotonic() - start_time) * 1000
             cb = self._get_circuit_breaker(selected_provider)
             cb.record_failure()
@@ -534,7 +566,21 @@ class AsyncSolwyn(_SolwynBase):
                 is_failover=is_failover,
             )
             self._reporter.report(event)
-            raise
+
+            # Retry with fallback model if configured
+            if self._should_retry_with_fallback(model):
+                fallback_kwargs = self._prepare_fallback_kwargs(kwargs)
+                model = self._config.fallback_model
+                is_failover = True
+                start_time = time.monotonic()
+                try:
+                    response = await dispatch(fallback_kwargs)
+                except Exception:
+                    cb.record_failure()
+                    raise primary_exc from None
+                # Falls through to post-processing (streaming or non-streaming)
+            else:
+                raise
 
         if is_streaming:
             accumulator = self._adapter.create_stream_accumulator()
