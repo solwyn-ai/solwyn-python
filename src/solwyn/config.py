@@ -35,7 +35,7 @@ class SolwynConfig(BaseModel):
     fail_open: bool = True
     budget_mode: BudgetMode = BudgetMode.ALERT_ONLY
     primary_provider: ProviderName = ProviderName.OPENAI
-    fallback_provider: ProviderName | None = None
+    fallback_model: str | None = None
 
     # Circuit breaker tuning
     circuit_breaker_failure_threshold: int = 3
@@ -64,7 +64,7 @@ class SolwynConfig(BaseModel):
             "fail_open": "FAIL_OPEN",
             "budget_mode": "BUDGET_MODE",
             "primary_provider": "PRIMARY_PROVIDER",
-            "fallback_provider": "FALLBACK_PROVIDER",
+            "fallback_model": "FALLBACK_MODEL",
             "circuit_breaker_failure_threshold": "CIRCUIT_BREAKER_FAILURE_THRESHOLD",
             "circuit_breaker_recovery_timeout": "CIRCUIT_BREAKER_RECOVERY_TIMEOUT",
             "circuit_breaker_success_threshold": "CIRCUIT_BREAKER_SUCCESS_THRESHOLD",

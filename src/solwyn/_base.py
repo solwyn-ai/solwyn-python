@@ -34,19 +34,15 @@ class _SolwynBase:
         self._sdk_instance_id = str(uuid.uuid4())
         self._tokenizer = TokenizerManager()
 
-        # One circuit breaker per configured provider
-        self._circuit_breakers: dict[str, CircuitBreaker] = {}
-        self._circuit_breakers[config.primary_provider.value] = CircuitBreaker(
-            failure_threshold=config.circuit_breaker_failure_threshold,
-            recovery_timeout=config.circuit_breaker_recovery_timeout,
-            success_threshold=config.circuit_breaker_success_threshold,
-        )
-        if config.fallback_provider is not None:
-            self._circuit_breakers[config.fallback_provider.value] = CircuitBreaker(
+        # One circuit breaker per configured provider. Additional providers
+        # get lazily-created breakers via _get_circuit_breaker.
+        self._circuit_breakers: dict[str, CircuitBreaker] = {
+            config.primary_provider.value: CircuitBreaker(
                 failure_threshold=config.circuit_breaker_failure_threshold,
                 recovery_timeout=config.circuit_breaker_recovery_timeout,
                 success_threshold=config.circuit_breaker_success_threshold,
             )
+        }
 
     def _build_metadata_event(
         self,
@@ -92,17 +88,17 @@ class _SolwynBase:
         return self._circuit_breakers[provider]
 
     def _select_provider(self) -> str:
-        """Select the best available provider via circuit breaker checks.
+        """Select the primary provider via its circuit breaker.
 
-        Checks the primary provider first. If its circuit is open and a
-        fallback is configured, checks the fallback. If both are open,
-        raises ProviderUnavailableError.
+        Returns the primary provider name if its circuit is CLOSED or HALF_OPEN.
+        Raises ProviderUnavailableError if the circuit is OPEN. Same-provider
+        model fallback is handled at dispatch time in client.py, not here.
 
         Returns:
-            The selected provider name (e.g. "openai" or "anthropic").
+            The primary provider name (e.g. "openai" or "anthropic").
 
         Raises:
-            ProviderUnavailableError: If all providers have open circuits.
+            ProviderUnavailableError: If the primary provider's circuit is open.
         """
         primary = self._config.primary_provider.value
         primary_cb = self._get_circuit_breaker(primary)
@@ -110,24 +106,8 @@ class _SolwynBase:
         if primary_cb.can_proceed():
             return primary
 
-        # Primary is open -- try fallback
-        if self._config.fallback_provider is not None:
-            fallback = self._config.fallback_provider.value
-            fallback_cb = self._get_circuit_breaker(fallback)
-
-            if fallback_cb.can_proceed():
-                return fallback
-
-            # Both open
-            raise ProviderUnavailableError(
-                f"All providers unavailable: {primary} and {fallback} circuits are open",
-                provider=primary,
-                circuit_state=primary_cb.state.value,
-            )
-
-        # No fallback configured, primary is open
         raise ProviderUnavailableError(
-            f"Provider {primary} is unavailable and no fallback is configured",
+            f"Provider {primary} is unavailable (circuit open)",
             provider=primary,
             circuit_state=primary_cb.state.value,
         )
