@@ -299,3 +299,111 @@ class TestAsyncFallbackModel:
 
         await solwyn._budget._http.aclose()
         await solwyn._reporter._http.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Streaming retry (stream=True, _force_stream=True)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSyncFallbackModelStreaming:
+    """Retry works when stream=True and when _force_stream=True (Google)."""
+
+    def test_stream_true_retry_returns_wrapped_stream(self) -> None:
+        """stream=True: primary raises on .create, retry returns a stream iterable."""
+        client = MagicMock()
+        client.__class__.__module__ = "openai._client"
+        client.__class__.__name__ = "OpenAI"
+
+        fake_stream = iter([])
+        client.chat.completions.create.side_effect = [
+            RuntimeError("primary boom"),
+            fake_stream,
+        ]
+
+        solwyn = _make_solwyn(client, fallback_model="gpt-4o-mini")
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_mock()),
+            patch.object(solwyn._reporter, "report"),
+        ):
+            wrapper = solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+
+            list(wrapper)
+
+        assert client.chat.completions.create.call_count == 2
+        assert client.chat.completions.create.call_args_list[1].kwargs["model"] == "gpt-4o-mini"
+        assert client.chat.completions.create.call_args_list[1].kwargs["stream"] is True
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+    def test_force_stream_google_retry(self) -> None:
+        """_force_stream=True is Google-only. Primary fails, retry via same code path."""
+        client = MagicMock()
+        client.__class__.__module__ = "google.genai._client"
+        client.__class__.__name__ = "Client"
+
+        fake_stream = iter([])
+        client.models.generate_content_stream.side_effect = [
+            RuntimeError("primary boom"),
+            fake_stream,
+        ]
+
+        solwyn = _make_solwyn(client, fallback_model="gemini-2.0-flash-lite")
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_mock()),
+            patch.object(solwyn._reporter, "report"),
+        ):
+            wrapper = solwyn.models.generate_content_stream(
+                model="gemini-2.0-flash",
+                contents="hi",
+            )
+
+            list(wrapper)
+
+        assert client.models.generate_content_stream.call_count == 2
+        assert (
+            client.models.generate_content_stream.call_args_list[1].kwargs["model"]
+            == "gemini-2.0-flash-lite"
+        )
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+
+@pytest.mark.unit
+class TestAsyncFallbackModelStreaming:
+    @pytest.mark.asyncio
+    async def test_async_stream_true_retry_returns_wrapped_stream(self) -> None:
+        client = MagicMock()
+        client.__class__.__module__ = "openai._client"
+        client.__class__.__name__ = "AsyncOpenAI"
+
+        async def _empty_async_iter():
+            return
+            yield  # pragma: no cover
+
+        client.chat.completions.create = AsyncMock(
+            side_effect=[RuntimeError("primary boom"), _empty_async_iter()]
+        )
+
+        solwyn = _make_async_solwyn(client, fallback_model="gpt-4o-mini")
+
+        wrapper = await solwyn.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "hi"}],
+            stream=True,
+        )
+        async for _ in wrapper:
+            pass
+
+        assert client.chat.completions.create.call_count == 2
+        assert client.chat.completions.create.call_args_list[1].kwargs["model"] == "gpt-4o-mini"
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
