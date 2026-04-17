@@ -459,7 +459,7 @@ class TestAnthropicFallbackModel:
 
 
 # ---------------------------------------------------------------------------
-# Circuit breaker state after rescued retry (regression guard for todo 001)
+# Circuit breaker state after rescued retry
 # ---------------------------------------------------------------------------
 
 
@@ -508,7 +508,7 @@ class TestCircuitBreakerStateAfterRescuedRetry:
 
 
 # ---------------------------------------------------------------------------
-# Streaming on_complete fires with is_failover=True (enriches todo 006)
+# Streaming on_complete fires with is_failover=True
 # ---------------------------------------------------------------------------
 
 
