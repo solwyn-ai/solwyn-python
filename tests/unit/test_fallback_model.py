@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -108,6 +109,19 @@ def _allow_budget_mock():
         reservation_id=None,
         mode=MagicMock(value="alert_only"),
     )
+
+
+def _monotonic_sequence(*values: float):
+    iterator = iter(values)
+    last = values[-1]
+
+    def _next() -> float:
+        nonlocal last
+        with suppress(StopIteration):
+            last = next(iterator)
+        return last
+
+    return _next
 
 
 @pytest.mark.unit
@@ -474,6 +488,53 @@ class TestCircuitBreakerStateAfterRescuedRetry:
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
 
+    def test_half_open_probe_that_recovers_closes_breaker(self) -> None:
+        client, _ = _mock_openai_client_with_failure_then_success()
+        solwyn = _make_solwyn(client, fallback_model="gpt-4o-mini")
+        cb = solwyn._get_circuit_breaker("openai")
+        cb.failure_threshold = 1
+        cb.success_threshold = 1
+        cb.recovery_timeout = 0
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_mock()),
+            patch.object(solwyn._reporter, "report"),
+        ):
+            result = solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+        assert result is not None
+        assert cb.state == CircuitState.CLOSED
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+    @pytest.mark.asyncio
+    async def test_async_half_open_probe_that_recovers_closes_breaker(self) -> None:
+        client, _ = _mock_async_openai_client_fail_then_success()
+        solwyn = _make_async_solwyn(client, fallback_model="gpt-4o-mini")
+        cb = solwyn._get_circuit_breaker("openai")
+        cb.failure_threshold = 1
+        cb.success_threshold = 1
+        cb.recovery_timeout = 0
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+
+        result = await solwyn.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+        assert result is not None
+        assert cb.state == CircuitState.CLOSED
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
 
 # ---------------------------------------------------------------------------
 # Streaming on_complete fires with is_model_fallback=True
@@ -515,6 +576,92 @@ class TestStreamingOnCompleteFailoverEvent:
 
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
+
+    def test_stream_true_on_complete_reports_full_failover_latency(self) -> None:
+        client = MagicMock()
+        client.__class__.__module__ = "openai._client"
+        client.__class__.__name__ = "OpenAI"
+
+        fake_stream = iter([])
+        client.chat.completions.create.side_effect = [
+            RuntimeError("primary boom"),
+            fake_stream,
+        ]
+
+        solwyn = _make_solwyn(client, fallback_model="gpt-4o-mini")
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_mock()),
+            patch.object(solwyn._reporter, "report") as report_mock,
+            patch(
+                "time.monotonic",
+                side_effect=_monotonic_sequence(
+                    100.000,
+                    100.060,
+                    100.060,
+                    100.060,
+                    100.060,
+                    100.061,
+                    100.090,
+                ),
+            ),
+        ):
+            wrapper = solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            list(wrapper)
+
+        reported = [c.args[0] for c in report_mock.call_args_list]
+        success_events = [e for e in reported if e.status.value == "success"]
+        assert success_events, "expected at least one success event from on_complete"
+        assert success_events[-1].latency_ms == pytest.approx(90.0)
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+    @pytest.mark.asyncio
+    async def test_async_stream_true_on_complete_reports_full_failover_latency(self) -> None:
+        client = MagicMock()
+        client.__class__.__module__ = "openai._client"
+        client.__class__.__name__ = "AsyncOpenAI"
+
+        async def _empty_async_iter():
+            return
+            yield  # pragma: no cover
+
+        client.chat.completions.create = AsyncMock(
+            side_effect=[RuntimeError("primary boom"), _empty_async_iter()]
+        )
+
+        solwyn = _make_async_solwyn(client, fallback_model="gpt-4o-mini")
+        with patch(
+            "time.monotonic",
+            side_effect=_monotonic_sequence(
+                200.000,
+                200.060,
+                200.060,
+                200.060,
+                200.060,
+                200.061,
+                200.090,
+            ),
+        ):
+            wrapper = await solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            async for _ in wrapper:
+                pass
+
+        reported = [c.args[0] for c in solwyn._reporter.report.call_args_list]
+        success_events = [e for e in reported if e.status.value == "success"]
+        assert success_events, "expected at least one success event from on_complete"
+        assert success_events[-1].latency_ms == pytest.approx(90.0)
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
 
 
 # ---------------------------------------------------------------------------

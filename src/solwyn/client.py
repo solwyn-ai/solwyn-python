@@ -39,7 +39,7 @@ from solwyn._proxies import (
     _SyncModelsProxy,
 )
 from solwyn._token_details import TokenDetails
-from solwyn._types import CallStatus, ProviderName
+from solwyn._types import CallStatus, CircuitState, ProviderName
 from solwyn.budget import (
     DEFAULT_COST_PER_TOKEN,
     AsyncBudgetEnforcer,
@@ -274,7 +274,9 @@ class Solwyn(_SolwynBase):
             response = self._sync_dispatch(ctx.kwargs, _force_stream=_force_stream)
         except Exception as primary_exc:
             cb = self._get_circuit_breaker(selected_provider)
-            cb.record_failure()
+            should_retry_with_fallback = self._should_retry_with_fallback(ctx.model)
+            if not (should_retry_with_fallback and cb.state == CircuitState.HALF_OPEN):
+                cb.record_failure()
             self._reporter.report(
                 self._build_error_event(
                     model=ctx.model,
@@ -284,7 +286,7 @@ class Solwyn(_SolwynBase):
                 )
             )
 
-            if not self._should_retry_with_fallback(ctx.model):
+            if not should_retry_with_fallback:
                 raise
 
             fallback_kwargs = self._prepare_fallback_kwargs(ctx.kwargs)
@@ -319,7 +321,7 @@ class Solwyn(_SolwynBase):
         if is_streaming:
             accumulator = self._adapter.create_stream_accumulator()
 
-            def on_complete(token_details: TokenDetails, elapsed_ms: float) -> None:
+            def on_complete(token_details: TokenDetails, _elapsed_ms: float) -> None:
                 cb = self._get_circuit_breaker(selected_provider)
                 cb.record_success()
                 if budget_result.reservation_id:
@@ -336,7 +338,7 @@ class Solwyn(_SolwynBase):
                     input_tokens=token_details.input_tokens,
                     output_tokens=token_details.output_tokens,
                     token_details=token_details,
-                    latency_ms=elapsed_ms,
+                    latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                     status=CallStatus.SUCCESS,
                     is_model_fallback=ctx.is_model_fallback,
                 )
@@ -582,7 +584,9 @@ class AsyncSolwyn(_SolwynBase):
             response = await self._async_dispatch(ctx.kwargs, _force_stream=_force_stream)
         except Exception as primary_exc:
             cb = self._get_circuit_breaker(selected_provider)
-            cb.record_failure()
+            should_retry_with_fallback = self._should_retry_with_fallback(ctx.model)
+            if not (should_retry_with_fallback and cb.state == CircuitState.HALF_OPEN):
+                cb.record_failure()
             self._reporter.report(
                 self._build_error_event(
                     model=ctx.model,
@@ -592,7 +596,7 @@ class AsyncSolwyn(_SolwynBase):
                 )
             )
 
-            if not self._should_retry_with_fallback(ctx.model):
+            if not should_retry_with_fallback:
                 raise
 
             fallback_kwargs = self._prepare_fallback_kwargs(ctx.kwargs)
@@ -626,7 +630,7 @@ class AsyncSolwyn(_SolwynBase):
         if is_streaming:
             accumulator = self._adapter.create_stream_accumulator()
 
-            async def on_complete(token_details: TokenDetails, elapsed_ms: float) -> None:
+            async def on_complete(token_details: TokenDetails, _elapsed_ms: float) -> None:
                 cb = self._get_circuit_breaker(selected_provider)
                 cb.record_success()
                 if budget_result.reservation_id:
@@ -640,7 +644,7 @@ class AsyncSolwyn(_SolwynBase):
                     input_tokens=token_details.input_tokens,
                     output_tokens=token_details.output_tokens,
                     token_details=token_details,
-                    latency_ms=elapsed_ms,
+                    latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                     status=CallStatus.SUCCESS,
                     is_model_fallback=ctx.is_model_fallback,
                 )
