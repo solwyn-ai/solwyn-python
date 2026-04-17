@@ -199,7 +199,7 @@ class Solwyn(_SolwynBase):
         6a. Non-streaming: extract usage, confirm budget, report metadata
         6b. Streaming: return wrapped stream that does 6a on exhaustion
         """
-        model = kwargs.get("model", "unknown")
+        model = kwargs["model"]
         is_streaming = kwargs.get("stream", False) or _force_stream
         is_failover = False
 
@@ -284,7 +284,7 @@ class Solwyn(_SolwynBase):
             retry_start = time.monotonic()
             try:
                 response = self._sync_dispatch(fallback_kwargs, _force_stream=_force_stream)
-            except Exception:
+            except Exception as retry_exc:
                 retry_elapsed_ms = (time.monotonic() - retry_start) * 1000
                 cb.record_failure()
                 retry_event = self._build_metadata_event(
@@ -299,13 +299,14 @@ class Solwyn(_SolwynBase):
                     is_failover=True,
                 )
                 self._reporter.report(retry_event)
+                primary_exc.add_note(
+                    f"fallback_model={fallback_model!r} also failed: {type(retry_exc).__name__}"
+                )
                 raise primary_exc from None
 
-            # Retry succeeded — post-processing below uses these variables.
             model = fallback_model
             kwargs = fallback_kwargs
             is_failover = True
-            start_time = retry_start
 
         # 6. Streaming vs non-streaming post-processing
         if is_streaming:
@@ -511,7 +512,7 @@ class AsyncSolwyn(_SolwynBase):
 
     async def _intercepted_call(self, *, _force_stream: bool = False, **kwargs: Any) -> Any:
         """Async core interception logic. See Solwyn._intercepted_call."""
-        model = kwargs.get("model", "unknown")
+        model = kwargs["model"]
         is_streaming = kwargs.get("stream", False) or _force_stream
         is_failover = False
 
@@ -591,7 +592,7 @@ class AsyncSolwyn(_SolwynBase):
             retry_start = time.monotonic()
             try:
                 response = await self._async_dispatch(fallback_kwargs, _force_stream=_force_stream)
-            except Exception:
+            except Exception as retry_exc:
                 retry_elapsed_ms = (time.monotonic() - retry_start) * 1000
                 cb.record_failure()
                 retry_event = self._build_metadata_event(
@@ -606,12 +607,14 @@ class AsyncSolwyn(_SolwynBase):
                     is_failover=True,
                 )
                 self._reporter.report(retry_event)
+                primary_exc.add_note(
+                    f"fallback_model={fallback_model!r} also failed: {type(retry_exc).__name__}"
+                )
                 raise primary_exc from None
 
             model = fallback_model
             kwargs = fallback_kwargs
             is_failover = True
-            start_time = retry_start
 
         if is_streaming:
             accumulator = self._adapter.create_stream_accumulator()

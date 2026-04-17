@@ -132,8 +132,6 @@ class _SolwynBase:
                 "fallback_model is not configured — caller should have checked "
                 "_should_retry_with_fallback() first"
             )
-        # FUTURE: If we ever gate retry by HTTP status code (Option B in
-        # the plan), that check goes in _should_retry_with_fallback, not here.
         swapped = dict(kwargs)
         swapped["model"] = self._config.fallback_model
         return swapped

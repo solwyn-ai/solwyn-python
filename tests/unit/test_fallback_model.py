@@ -9,6 +9,7 @@ import pytest
 from conftest import VALID_API_KEY, VALID_PROJECT_ID
 
 from solwyn._base import _SolwynBase
+from solwyn._types import CircuitState
 from solwyn.client import AsyncSolwyn, Solwyn
 from solwyn.config import SolwynConfig
 
@@ -407,3 +408,172 @@ class TestAsyncFallbackModelStreaming:
 
         await solwyn._budget._http.aclose()
         await solwyn._reporter._http.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Anthropic provider retry (covers _sync_dispatch's messages.create branch)
+# ---------------------------------------------------------------------------
+
+
+def _mock_anthropic_client_fail_then_success():
+    client = MagicMock()
+    client.__class__.__module__ = "anthropic._client"
+    client.__class__.__name__ = "Anthropic"
+
+    success_response = MagicMock()
+    success_response.usage = SimpleNamespace(input_tokens=10, output_tokens=5)
+
+    client.messages.create.side_effect = [
+        RuntimeError("primary boom"),
+        success_response,
+    ]
+    return client, success_response
+
+
+@pytest.mark.unit
+class TestAnthropicFallbackModel:
+    """Anthropic's messages.create path retries with fallback_model."""
+
+    def test_anthropic_retry_success_sets_is_failover(self) -> None:
+        client, resp = _mock_anthropic_client_fail_then_success()
+        solwyn = _make_solwyn(client, fallback_model="claude-3-haiku-20240307")
+
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_mock()),
+            patch.object(solwyn._reporter, "report") as report_mock,
+        ):
+            result = solwyn.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=100,
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+        assert result is resp
+        assert client.messages.create.call_count == 2
+        assert client.messages.create.call_args_list[1].kwargs["model"] == "claude-3-haiku-20240307"
+        reported = [c.args[0] for c in report_mock.call_args_list]
+        assert any(e.is_failover and e.status.value == "success" for e in reported)
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+
+# ---------------------------------------------------------------------------
+# Circuit breaker state after rescued retry (regression guard for todo 001)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCircuitBreakerStateAfterRescuedRetry:
+    """Rescued retries must not open the circuit in CLOSED state."""
+
+    def test_breaker_stays_closed_after_five_rescued_retries(self) -> None:
+        """Primary fails, fallback succeeds, repeated 5x: breaker stays CLOSED.
+
+        record_success() resets failure_count to 0 in CLOSED state
+        (circuit_breaker.py:82-84), so each rescued retry nets out.
+        """
+        client = MagicMock()
+        client.__class__.__module__ = "openai._client"
+        client.__class__.__name__ = "OpenAI"
+
+        success_response = MagicMock()
+        success_response.usage = SimpleNamespace(prompt_tokens=10, completion_tokens=5)
+
+        # 5 rescued retries = 10 calls alternating fail/success
+        client.chat.completions.create.side_effect = [
+            RuntimeError("primary boom"),
+            success_response,
+        ] * 5
+
+        solwyn = _make_solwyn(client, fallback_model="gpt-4o-mini")
+        cb = solwyn._get_circuit_breaker("openai")
+
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_mock()),
+            patch.object(solwyn._reporter, "report"),
+        ):
+            for _ in range(5):
+                solwyn.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": "hi"}],
+                )
+
+        assert cb.state == CircuitState.CLOSED
+        assert cb.failure_count == 0
+        assert client.chat.completions.create.call_count == 10
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+
+# ---------------------------------------------------------------------------
+# Streaming on_complete fires with is_failover=True (enriches todo 006)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestStreamingOnCompleteFailoverEvent:
+    """When stream retry succeeds, on_complete emits a success event with is_failover=True."""
+
+    def test_stream_true_on_complete_reports_failover(self) -> None:
+        client = MagicMock()
+        client.__class__.__module__ = "openai._client"
+        client.__class__.__name__ = "OpenAI"
+
+        fake_stream = iter([])
+        client.chat.completions.create.side_effect = [
+            RuntimeError("primary boom"),
+            fake_stream,
+        ]
+
+        solwyn = _make_solwyn(client, fallback_model="gpt-4o-mini")
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_mock()),
+            patch.object(solwyn._reporter, "report") as report_mock,
+        ):
+            wrapper = solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            list(wrapper)
+
+        reported = [c.args[0] for c in report_mock.call_args_list]
+        success_events = [e for e in reported if e.status.value == "success"]
+        assert success_events, "expected at least one success event from on_complete"
+        assert all(e.is_failover for e in success_events)
+        assert all(e.model == "gpt-4o-mini" for e in success_events)
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+
+# ---------------------------------------------------------------------------
+# Primary exception carries a PEP 678 note when fallback also fails
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestFallbackFailureNote:
+    """raise primary_exc attaches a note describing the fallback failure."""
+
+    def test_primary_exc_has_fallback_note(self) -> None:
+        client = _mock_openai_client_always_fail()
+        solwyn = _make_solwyn(client, fallback_model="gpt-4o-mini")
+
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_mock()),
+            patch.object(solwyn._reporter, "report"),
+            pytest.raises(RuntimeError, match="primary boom") as exc_info,
+        ):
+            solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+        notes = getattr(exc_info.value, "__notes__", [])
+        assert any("gpt-4o-mini" in note and "RuntimeError" in note for note in notes)
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
