@@ -151,7 +151,7 @@ except BudgetExceededError as e:
 | `api_url` | `SOLWYN_API_URL` | `https://api.solwyn.ai` | Solwyn API endpoint |
 | `fail_open` | `SOLWYN_FAIL_OPEN` | `True` | Allow LLM calls when Solwyn API is unreachable |
 | `budget_mode` | `SOLWYN_BUDGET_MODE` | `alert_only` | Budget enforcement mode |
-| `fallback_provider` | `SOLWYN_FALLBACK_PROVIDER` | `None` | Failover provider when primary circuit breaks |
+| `fallback_model` | `SOLWYN_FALLBACK_MODEL` | `None` | Model name to retry with when the primary call fails (same provider, same client) |
 
 Use env vars to avoid passing credentials in code:
 
@@ -171,7 +171,7 @@ All SDK errors inherit from `SolwynError`:
 | Exception | Raised when |
 |-----------|-------------|
 | `BudgetExceededError` | Budget exceeded in `hard_deny` mode |
-| `ProviderUnavailableError` | Circuit breaker is open and no fallback exists |
+| `ProviderUnavailableError` | Circuit breaker is open |
 | `ConfigurationError` | Invalid API key or project ID format |
 
 Provider errors (e.g., `openai.RateLimitError`) pass through unmodified.
@@ -190,7 +190,7 @@ The SDK sends a `MetadataEvent` after each LLM call. This is everything it trans
 | `token_details` | `object` | Breakdown: cached, reasoning, audio tokens |
 | `latency_ms` | `float` | Call duration in milliseconds |
 | `status` | `str` | `success`, `error`, or `budget_denied` |
-| `is_failover` | `bool` | Whether a fallback provider was used |
+| `is_failover` | `bool` | Whether the call used `fallback_model` after the primary model failed |
 | `sdk_instance_id` | `str` | Per-process UUID for deduplication |
 | `timestamp` | `datetime` | When the call completed (UTC) |
 

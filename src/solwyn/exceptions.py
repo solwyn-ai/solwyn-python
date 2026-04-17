@@ -59,7 +59,7 @@ class BudgetExceededError(SolwynError):
 
 
 class ProviderUnavailableError(SolwynError):
-    """Raised when a provider's circuit breaker is open and no fallback exists.
+    """Raised when a provider's circuit breaker is open.
 
     Attributes:
         provider: Name of the unavailable provider (e.g. ``"openai"``).
