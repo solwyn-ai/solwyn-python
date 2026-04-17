@@ -173,6 +173,20 @@ class Solwyn(_SolwynBase):
             return _SyncModelsProxy(self)
         return self._client.models
 
+    def _sync_dispatch(self, kwargs: dict[str, object], *, _force_stream: bool) -> Any:
+        """Dispatch the call to the underlying SDK client. Pure I/O — no retry, no metrics."""
+        if self._detected_provider == ProviderName.OPENAI:
+            return self._client.chat.completions.create(**kwargs)
+        if self._detected_provider == ProviderName.ANTHROPIC:
+            return self._client.messages.create(**kwargs)
+        if _force_stream:
+            if self._detected_provider != ProviderName.GOOGLE:
+                raise RuntimeError(
+                    f"_force_stream is Google-only but provider is {self._detected_provider}"
+                )
+            return self._client.models.generate_content_stream(**kwargs)
+        return self._client.models.generate_content(**kwargs)
+
     def _intercepted_call(self, *, _force_stream: bool = False, **kwargs: Any) -> Any:
         """Core interception logic for LLM calls.
 
@@ -240,24 +254,11 @@ class Solwyn(_SolwynBase):
         if is_streaming:
             kwargs = self._adapter.prepare_streaming(kwargs)
 
-        # 5. Call underlying client
+        # 5. Call underlying client (with same-provider model fallback retry)
         start_time = time.monotonic()
         try:
-            if self._detected_provider == ProviderName.OPENAI:
-                response = self._client.chat.completions.create(**kwargs)
-            elif self._detected_provider == ProviderName.ANTHROPIC:
-                response = self._client.messages.create(**kwargs)
-            elif _force_stream:
-                # _force_stream is only passed by _SyncModelsProxy.generate_content_stream(),
-                # which is only constructed for Google clients.
-                if self._detected_provider != ProviderName.GOOGLE:
-                    raise RuntimeError(
-                        f"_force_stream is Google-only but provider is {self._detected_provider}"
-                    )
-                response = self._client.models.generate_content_stream(**kwargs)
-            else:
-                response = self._client.models.generate_content(**kwargs)
-        except Exception:
+            response = self._sync_dispatch(kwargs, _force_stream=_force_stream)
+        except Exception as primary_exc:
             elapsed_ms = (time.monotonic() - start_time) * 1000
             cb = self._get_circuit_breaker(selected_provider)
             cb.record_failure()
@@ -274,7 +275,37 @@ class Solwyn(_SolwynBase):
                 is_failover=is_failover,
             )
             self._reporter.report(event)
-            raise
+
+            if not self._should_retry_with_fallback(model):
+                raise
+
+            fallback_kwargs = self._prepare_fallback_kwargs(kwargs)
+            fallback_model = str(fallback_kwargs["model"])
+            retry_start = time.monotonic()
+            try:
+                response = self._sync_dispatch(fallback_kwargs, _force_stream=_force_stream)
+            except Exception:
+                retry_elapsed_ms = (time.monotonic() - retry_start) * 1000
+                cb.record_failure()
+                retry_event = self._build_metadata_event(
+                    project_id=self._config.project_id,
+                    model=fallback_model,
+                    provider=selected_provider,
+                    input_tokens=0,
+                    output_tokens=0,
+                    token_details=None,
+                    latency_ms=retry_elapsed_ms,
+                    status=CallStatus.ERROR,
+                    is_failover=True,
+                )
+                self._reporter.report(retry_event)
+                raise primary_exc from None
+
+            # Retry succeeded — post-processing below uses these variables.
+            model = fallback_model
+            kwargs = fallback_kwargs
+            is_failover = True
+            start_time = retry_start
 
         # 6. Streaming vs non-streaming post-processing
         if is_streaming:
