@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from conftest import VALID_API_KEY, VALID_PROJECT_ID
 
 from solwyn._base import _SolwynBase
+from solwyn.client import AsyncSolwyn, Solwyn
 from solwyn.config import SolwynConfig
 
 
@@ -59,12 +63,6 @@ class TestPrepareFallbackKwargs:
 # ---------------------------------------------------------------------------
 # Sync retry (via Solwyn._intercepted_call)
 # ---------------------------------------------------------------------------
-
-
-from types import SimpleNamespace  # noqa: E402
-from unittest.mock import MagicMock, patch  # noqa: E402
-
-from solwyn.client import Solwyn  # noqa: E402
 
 
 def _mock_openai_client_with_failure_then_success():
@@ -194,3 +192,110 @@ class TestSyncFallbackModel:
 
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
+
+
+# ---------------------------------------------------------------------------
+# Async retry (via AsyncSolwyn._intercepted_call)
+# ---------------------------------------------------------------------------
+
+
+def _mock_async_openai_client_fail_then_success():
+    client = MagicMock()
+    client.__class__.__module__ = "openai._client"
+    client.__class__.__name__ = "AsyncOpenAI"
+
+    success_response = MagicMock()
+    success_response.usage = SimpleNamespace(prompt_tokens=10, completion_tokens=5)
+
+    client.chat.completions.create = AsyncMock(
+        side_effect=[RuntimeError("primary boom"), success_response]
+    )
+    return client, success_response
+
+
+def _mock_async_openai_client_always_fail():
+    client = MagicMock()
+    client.__class__.__module__ = "openai._client"
+    client.__class__.__name__ = "AsyncOpenAI"
+    client.chat.completions.create = AsyncMock(
+        side_effect=[RuntimeError("primary boom"), RuntimeError("fallback boom")]
+    )
+    return client
+
+
+def _make_async_solwyn(client, **overrides):
+    defaults = {"api_key": VALID_API_KEY, "project_id": VALID_PROJECT_ID}
+    defaults.update(overrides)
+    solwyn = AsyncSolwyn(client, **defaults)
+    solwyn._budget.check_budget = AsyncMock(return_value=_allow_budget_mock())
+    solwyn._reporter.report = MagicMock()
+    return solwyn
+
+
+@pytest.mark.unit
+class TestAsyncFallbackModel:
+    """Async client falls back to fallback_model on primary failure."""
+
+    @pytest.mark.asyncio
+    async def test_async_retry_success_sets_is_failover(self) -> None:
+        client, resp = _mock_async_openai_client_fail_then_success()
+        solwyn = _make_async_solwyn(client, fallback_model="gpt-4o-mini")
+
+        result = await solwyn.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+        assert result is resp
+        assert client.chat.completions.create.call_count == 2
+        assert client.chat.completions.create.call_args_list[1].kwargs["model"] == "gpt-4o-mini"
+        reported = [c.args[0] for c in solwyn._reporter.report.call_args_list]
+        assert any(e.is_failover and e.status.value == "success" for e in reported)
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.asyncio
+    async def test_async_retry_both_fail_raises_primary(self) -> None:
+        client = _mock_async_openai_client_always_fail()
+        solwyn = _make_async_solwyn(client, fallback_model="gpt-4o-mini")
+
+        with pytest.raises(RuntimeError, match="primary boom"):
+            await solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        assert client.chat.completions.create.call_count == 2
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.asyncio
+    async def test_async_no_retry_when_fallback_not_configured(self) -> None:
+        client = _mock_async_openai_client_always_fail()
+        solwyn = _make_async_solwyn(client)
+
+        with pytest.raises(RuntimeError, match="primary boom"):
+            await solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        assert client.chat.completions.create.call_count == 1
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.asyncio
+    async def test_async_no_retry_when_model_equals_fallback_model(self) -> None:
+        client = _mock_async_openai_client_always_fail()
+        solwyn = _make_async_solwyn(client, fallback_model="gpt-4o")
+
+        with pytest.raises(RuntimeError, match="primary boom"):
+            await solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        assert client.chat.completions.create.call_count == 1
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
