@@ -111,3 +111,29 @@ class _SolwynBase:
             provider=primary,
             circuit_state=primary_cb.state.value,
         )
+
+    def _should_retry_with_fallback(self, model: str) -> bool:
+        """Return True if the primary call should be retried with fallback_model.
+
+        Guards against infinite retry loops by refusing to retry when the
+        primary call is already targeting the fallback model.
+        """
+        fm = self._config.fallback_model
+        return fm is not None and model != fm
+
+    def _prepare_fallback_kwargs(self, kwargs: dict[str, object]) -> dict[str, object]:
+        """Return a shallow copy of kwargs with model swapped to fallback_model.
+
+        Does not mutate the input. Caller must have verified
+        _should_retry_with_fallback first.
+        """
+        if self._config.fallback_model is None:
+            raise RuntimeError(
+                "fallback_model is not configured — caller should have checked "
+                "_should_retry_with_fallback() first"
+            )
+        # FUTURE: If we ever gate retry by HTTP status code (Option B in
+        # the plan), that check goes in _should_retry_with_fallback, not here.
+        swapped = dict(kwargs)
+        swapped["model"] = self._config.fallback_model
+        return swapped
