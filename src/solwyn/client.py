@@ -24,11 +24,11 @@ from __future__ import annotations
 import functools
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError
 
-from solwyn._base import _SolwynBase
+from solwyn._base import _AttemptContext, _SolwynBase
 from solwyn._privacy import estimate_content_length, estimate_tokens_from_length
 from solwyn._proxies import (
     _AsyncChatProxy,
@@ -54,7 +54,7 @@ from solwyn.stream import AsyncStreamWrapper, SyncStreamWrapper
 logger = logging.getLogger(__name__)
 
 
-def _detect_provider(client: Any) -> ProviderName:
+def _detect_provider(client: object) -> ProviderName:
     """Auto-detect the LLM provider from the client instance.
 
     Delegates to the provider adapter registry for consistent detection.
@@ -95,20 +95,29 @@ class Solwyn(_SolwynBase):
 
     def __init__(
         self,
-        client: Any,
+        client: object,
         *,
         api_key: str | None = None,
         project_id: str | None = None,
-        **config_kwargs: Any,
+        **config_kwargs: object,
     ) -> None:
         # Detect provider and store adapter for usage extraction
         self._adapter = get_adapter_for_client(client)
         self._detected_provider = ProviderName(self._adapter.name)
-        self._client = client
+        # self._client is typed Any because each provider SDK has a different
+        # public surface (chat/messages/models). A unified Protocol would not
+        # match all three. Type safety stops at the _sync_dispatch boundary.
+        self._client: Any = client
 
         # Build config — SolwynConfig._load_from_env fills missing
         # values from SOLWYN_API_KEY / SOLWYN_PROJECT_ID env vars.
-        cfg_kwargs: dict[str, Any] = {"primary_provider": self._detected_provider, **config_kwargs}
+        # cfg_kwargs stays dict[str, Any]: mypy can't verify Pydantic's **kwargs
+        # validation against SolwynConfig's typed fields, so tightening here
+        # adds noise without type-safety gain. SolwynConfig validates at runtime.
+        cfg_kwargs: dict[str, Any] = {
+            "primary_provider": self._detected_provider,
+            **config_kwargs,
+        }
         if api_key is not None:
             cfg_kwargs["api_key"] = api_key
         if project_id is not None:
@@ -187,7 +196,7 @@ class Solwyn(_SolwynBase):
             return self._client.models.generate_content_stream(**kwargs)
         return self._client.models.generate_content(**kwargs)
 
-    def _intercepted_call(self, *, _force_stream: bool = False, **kwargs: Any) -> Any:
+    def _intercepted_call(self, *, _force_stream: bool = False, **kwargs: object) -> Any:
         """Core interception logic for LLM calls.
 
         Steps:
@@ -199,8 +208,8 @@ class Solwyn(_SolwynBase):
         6a. Non-streaming: extract usage, confirm budget, report metadata
         6b. Streaming: return wrapped stream that does 6a on exhaustion
         """
-        model = kwargs["model"]
-        is_streaming = kwargs.get("stream", False) or _force_stream
+        model = cast(str, kwargs["model"])
+        is_streaming = bool(kwargs.get("stream", False)) or _force_stream
         is_model_fallback = False
 
         # 1. Estimate input tokens from input text (length-only; never materializes joined string)
@@ -255,58 +264,56 @@ class Solwyn(_SolwynBase):
             kwargs = self._adapter.prepare_streaming(kwargs)
 
         # 5. Call underlying client (with same-provider model fallback retry)
-        start_time = time.monotonic()
+        ctx = _AttemptContext(
+            model=model,
+            kwargs=kwargs,
+            start_time=time.monotonic(),
+            is_model_fallback=is_model_fallback,
+        )
         try:
-            response = self._sync_dispatch(kwargs, _force_stream=_force_stream)
+            response = self._sync_dispatch(ctx.kwargs, _force_stream=_force_stream)
         except Exception as primary_exc:
-            elapsed_ms = (time.monotonic() - start_time) * 1000
             cb = self._get_circuit_breaker(selected_provider)
             cb.record_failure()
-
-            event = self._build_metadata_event(
-                project_id=self._config.project_id,
-                model=model,
-                provider=selected_provider,
-                input_tokens=0,
-                output_tokens=0,
-                token_details=None,
-                latency_ms=elapsed_ms,
-                status=CallStatus.ERROR,
-                is_model_fallback=is_model_fallback,
+            self._reporter.report(
+                self._build_error_event(
+                    model=ctx.model,
+                    provider=selected_provider,
+                    latency_ms=(time.monotonic() - ctx.start_time) * 1000,
+                    is_model_fallback=ctx.is_model_fallback,
+                )
             )
-            self._reporter.report(event)
 
-            if not self._should_retry_with_fallback(model):
+            if not self._should_retry_with_fallback(ctx.model):
                 raise
 
-            fallback_kwargs = self._prepare_fallback_kwargs(kwargs)
-            fallback_model = str(fallback_kwargs["model"])
+            fallback_kwargs = self._prepare_fallback_kwargs(ctx.kwargs)
+            fallback_model = cast(str, fallback_kwargs["model"])
             retry_start = time.monotonic()
             try:
                 response = self._sync_dispatch(fallback_kwargs, _force_stream=_force_stream)
             except Exception as retry_exc:
-                retry_elapsed_ms = (time.monotonic() - retry_start) * 1000
                 cb.record_failure()
-                retry_event = self._build_metadata_event(
-                    project_id=self._config.project_id,
-                    model=fallback_model,
-                    provider=selected_provider,
-                    input_tokens=0,
-                    output_tokens=0,
-                    token_details=None,
-                    latency_ms=retry_elapsed_ms,
-                    status=CallStatus.ERROR,
-                    is_model_fallback=True,
+                self._reporter.report(
+                    self._build_error_event(
+                        model=fallback_model,
+                        provider=selected_provider,
+                        latency_ms=(time.monotonic() - retry_start) * 1000,
+                        is_model_fallback=True,
+                    )
                 )
-                self._reporter.report(retry_event)
                 primary_exc.add_note(
                     f"fallback_model={fallback_model!r} also failed: {type(retry_exc).__name__}"
                 )
                 raise primary_exc from None
 
-            model = fallback_model
-            kwargs = fallback_kwargs
-            is_model_fallback = True
+            ctx = ctx.model_copy(
+                update={
+                    "model": fallback_model,
+                    "kwargs": fallback_kwargs,
+                    "is_model_fallback": True,
+                }
+            )
 
         # 6. Streaming vs non-streaming post-processing
         if is_streaming:
@@ -318,61 +325,56 @@ class Solwyn(_SolwynBase):
                 if budget_result.reservation_id:
                     confirm = self._budget.build_confirm_request(
                         reservation_id=budget_result.reservation_id,
-                        model=model,
+                        model=ctx.model,
                         token_details=token_details,
                     )
                     self._reporter.report_confirm(confirm)
                 event = self._build_metadata_event(
                     project_id=self._config.project_id,
-                    model=model,
+                    model=ctx.model,
                     provider=selected_provider,
                     input_tokens=token_details.input_tokens,
                     output_tokens=token_details.output_tokens,
                     token_details=token_details,
                     latency_ms=elapsed_ms,
                     status=CallStatus.SUCCESS,
-                    is_model_fallback=is_model_fallback,
+                    is_model_fallback=ctx.is_model_fallback,
                 )
                 self._reporter.report(event)
 
             def on_error(exc: Exception) -> None:
-                elapsed_ms = (time.monotonic() - start_time) * 1000
                 cb = self._get_circuit_breaker(selected_provider)
                 cb.record_failure()
-                event = self._build_metadata_event(
-                    project_id=self._config.project_id,
-                    model=model,
-                    provider=selected_provider,
-                    input_tokens=0,
-                    output_tokens=0,
-                    token_details=None,
-                    latency_ms=elapsed_ms,
-                    status=CallStatus.ERROR,
-                    is_model_fallback=is_model_fallback,
+                self._reporter.report(
+                    self._build_error_event(
+                        model=ctx.model,
+                        provider=selected_provider,
+                        latency_ms=(time.monotonic() - ctx.start_time) * 1000,
+                        is_model_fallback=ctx.is_model_fallback,
+                    )
                 )
-                self._reporter.report(event)
 
             return SyncStreamWrapper(response, accumulator, on_complete, on_error)
 
         # Non-streaming: existing flow
         token_details = self._adapter.extract_usage(response)
-        elapsed_ms = (time.monotonic() - start_time) * 1000
+        elapsed_ms = (time.monotonic() - ctx.start_time) * 1000
         cb = self._get_circuit_breaker(selected_provider)
         cb.record_success()
 
         if budget_result.reservation_id:
-            self._budget.confirm_cost(budget_result.reservation_id, model, token_details)
+            self._budget.confirm_cost(budget_result.reservation_id, ctx.model, token_details)
 
         event = self._build_metadata_event(
             project_id=self._config.project_id,
-            model=model,
+            model=ctx.model,
             provider=selected_provider,
             input_tokens=token_details.input_tokens,
             output_tokens=token_details.output_tokens,
             token_details=token_details,
             latency_ms=elapsed_ms,
             status=CallStatus.SUCCESS,
-            is_model_fallback=is_model_fallback,
+            is_model_fallback=ctx.is_model_fallback,
         )
         self._reporter.report(event)
 
@@ -422,18 +424,25 @@ class AsyncSolwyn(_SolwynBase):
 
     def __init__(
         self,
-        client: Any,
+        client: object,
         *,
         api_key: str | None = None,
         project_id: str | None = None,
-        **config_kwargs: Any,
+        **config_kwargs: object,
     ) -> None:
         # Detect provider and store adapter for usage extraction
         self._adapter = get_adapter_for_client(client)
         self._detected_provider = ProviderName(self._adapter.name)
-        self._client = client
+        # See sync Solwyn.__init__ for why _client is typed Any.
+        self._client: Any = client
 
-        cfg_kwargs: dict[str, Any] = {"primary_provider": self._detected_provider, **config_kwargs}
+        # cfg_kwargs stays dict[str, Any]: mypy can't verify Pydantic's **kwargs
+        # validation against SolwynConfig's typed fields, so tightening here
+        # adds noise without type-safety gain. SolwynConfig validates at runtime.
+        cfg_kwargs: dict[str, Any] = {
+            "primary_provider": self._detected_provider,
+            **config_kwargs,
+        }
         if api_key is not None:
             cfg_kwargs["api_key"] = api_key
         if project_id is not None:
@@ -510,10 +519,10 @@ class AsyncSolwyn(_SolwynBase):
             return await self._client.models.generate_content_stream(**kwargs)
         return await self._client.models.generate_content(**kwargs)
 
-    async def _intercepted_call(self, *, _force_stream: bool = False, **kwargs: Any) -> Any:
+    async def _intercepted_call(self, *, _force_stream: bool = False, **kwargs: object) -> Any:
         """Async core interception logic. See Solwyn._intercepted_call."""
-        model = kwargs["model"]
-        is_streaming = kwargs.get("stream", False) or _force_stream
+        model = cast(str, kwargs["model"])
+        is_streaming = bool(kwargs.get("stream", False)) or _force_stream
         is_model_fallback = False
 
         char_count = estimate_content_length(kwargs)
@@ -563,58 +572,56 @@ class AsyncSolwyn(_SolwynBase):
         if is_streaming:
             kwargs = self._adapter.prepare_streaming(kwargs)
 
-        start_time = time.monotonic()
+        ctx = _AttemptContext(
+            model=model,
+            kwargs=kwargs,
+            start_time=time.monotonic(),
+            is_model_fallback=is_model_fallback,
+        )
         try:
-            response = await self._async_dispatch(kwargs, _force_stream=_force_stream)
+            response = await self._async_dispatch(ctx.kwargs, _force_stream=_force_stream)
         except Exception as primary_exc:
-            elapsed_ms = (time.monotonic() - start_time) * 1000
             cb = self._get_circuit_breaker(selected_provider)
             cb.record_failure()
-
-            event = self._build_metadata_event(
-                project_id=self._config.project_id,
-                model=model,
-                provider=selected_provider,
-                input_tokens=0,
-                output_tokens=0,
-                token_details=None,
-                latency_ms=elapsed_ms,
-                status=CallStatus.ERROR,
-                is_model_fallback=is_model_fallback,
+            self._reporter.report(
+                self._build_error_event(
+                    model=ctx.model,
+                    provider=selected_provider,
+                    latency_ms=(time.monotonic() - ctx.start_time) * 1000,
+                    is_model_fallback=ctx.is_model_fallback,
+                )
             )
-            self._reporter.report(event)
 
-            if not self._should_retry_with_fallback(model):
+            if not self._should_retry_with_fallback(ctx.model):
                 raise
 
-            fallback_kwargs = self._prepare_fallback_kwargs(kwargs)
-            fallback_model = str(fallback_kwargs["model"])
+            fallback_kwargs = self._prepare_fallback_kwargs(ctx.kwargs)
+            fallback_model = cast(str, fallback_kwargs["model"])
             retry_start = time.monotonic()
             try:
                 response = await self._async_dispatch(fallback_kwargs, _force_stream=_force_stream)
             except Exception as retry_exc:
-                retry_elapsed_ms = (time.monotonic() - retry_start) * 1000
                 cb.record_failure()
-                retry_event = self._build_metadata_event(
-                    project_id=self._config.project_id,
-                    model=fallback_model,
-                    provider=selected_provider,
-                    input_tokens=0,
-                    output_tokens=0,
-                    token_details=None,
-                    latency_ms=retry_elapsed_ms,
-                    status=CallStatus.ERROR,
-                    is_model_fallback=True,
+                self._reporter.report(
+                    self._build_error_event(
+                        model=fallback_model,
+                        provider=selected_provider,
+                        latency_ms=(time.monotonic() - retry_start) * 1000,
+                        is_model_fallback=True,
+                    )
                 )
-                self._reporter.report(retry_event)
                 primary_exc.add_note(
                     f"fallback_model={fallback_model!r} also failed: {type(retry_exc).__name__}"
                 )
                 raise primary_exc from None
 
-            model = fallback_model
-            kwargs = fallback_kwargs
-            is_model_fallback = True
+            ctx = ctx.model_copy(
+                update={
+                    "model": fallback_model,
+                    "kwargs": fallback_kwargs,
+                    "is_model_fallback": True,
+                }
+            )
 
         if is_streaming:
             accumulator = self._adapter.create_stream_accumulator()
@@ -624,58 +631,53 @@ class AsyncSolwyn(_SolwynBase):
                 cb.record_success()
                 if budget_result.reservation_id:
                     await self._budget.confirm_cost(
-                        budget_result.reservation_id, model, token_details
+                        budget_result.reservation_id, ctx.model, token_details
                     )
                 event = self._build_metadata_event(
                     project_id=self._config.project_id,
-                    model=model,
+                    model=ctx.model,
                     provider=selected_provider,
                     input_tokens=token_details.input_tokens,
                     output_tokens=token_details.output_tokens,
                     token_details=token_details,
                     latency_ms=elapsed_ms,
                     status=CallStatus.SUCCESS,
-                    is_model_fallback=is_model_fallback,
+                    is_model_fallback=ctx.is_model_fallback,
                 )
                 self._reporter.report(event)
 
             async def on_error(exc: Exception) -> None:
-                elapsed_ms = (time.monotonic() - start_time) * 1000
                 cb = self._get_circuit_breaker(selected_provider)
                 cb.record_failure()
-                event = self._build_metadata_event(
-                    project_id=self._config.project_id,
-                    model=model,
-                    provider=selected_provider,
-                    input_tokens=0,
-                    output_tokens=0,
-                    token_details=None,
-                    latency_ms=elapsed_ms,
-                    status=CallStatus.ERROR,
-                    is_model_fallback=is_model_fallback,
+                self._reporter.report(
+                    self._build_error_event(
+                        model=ctx.model,
+                        provider=selected_provider,
+                        latency_ms=(time.monotonic() - ctx.start_time) * 1000,
+                        is_model_fallback=ctx.is_model_fallback,
+                    )
                 )
-                self._reporter.report(event)
 
             return AsyncStreamWrapper(response, accumulator, on_complete, on_error)
 
         token_details = self._adapter.extract_usage(response)
-        elapsed_ms = (time.monotonic() - start_time) * 1000
+        elapsed_ms = (time.monotonic() - ctx.start_time) * 1000
         cb = self._get_circuit_breaker(selected_provider)
         cb.record_success()
 
         if budget_result.reservation_id:
-            await self._budget.confirm_cost(budget_result.reservation_id, model, token_details)
+            await self._budget.confirm_cost(budget_result.reservation_id, ctx.model, token_details)
 
         event = self._build_metadata_event(
             project_id=self._config.project_id,
-            model=model,
+            model=ctx.model,
             provider=selected_provider,
             input_tokens=token_details.input_tokens,
             output_tokens=token_details.output_tokens,
             token_details=token_details,
             latency_ms=elapsed_ms,
             status=CallStatus.SUCCESS,
-            is_model_fallback=is_model_fallback,
+            is_model_fallback=ctx.is_model_fallback,
         )
         self._reporter.report(event)
 

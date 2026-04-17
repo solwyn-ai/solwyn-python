@@ -10,12 +10,30 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from pydantic import BaseModel, ConfigDict
+
 from solwyn._token_details import TokenDetails
 from solwyn._types import CallStatus, MetadataEvent, ProviderName
 from solwyn.circuit_breaker import CircuitBreaker
 from solwyn.config import SolwynConfig
 from solwyn.exceptions import ProviderUnavailableError
 from solwyn.tokenizer import TokenizerManager
+
+
+class _AttemptContext(BaseModel):
+    """Per-attempt state for an intercepted LLM call.
+
+    Immutable. On retry-success, use ``model_copy(update=...)`` to atomically
+    replace all fields that change — prevents the silent-drift bug where a
+    future contributor forgets to update one of several loose locals.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    model: str
+    kwargs: dict[str, object]
+    start_time: float
+    is_model_fallback: bool
 
 
 class _SolwynBase:
@@ -72,6 +90,31 @@ class _SolwynBase:
             is_model_fallback=is_model_fallback,
             sdk_instance_id=sdk_instance_id or self._sdk_instance_id,
             timestamp=timestamp or datetime.now(UTC),
+        )
+
+    def _build_error_event(
+        self,
+        *,
+        model: str,
+        provider: str,
+        latency_ms: float,
+        is_model_fallback: bool,
+    ) -> MetadataEvent:
+        """Build an error-status MetadataEvent with zeroed token counts.
+
+        Convenience wrapper for the retry/dispatch-failure paths where
+        token_details is unavailable and status is always ERROR.
+        """
+        return self._build_metadata_event(
+            project_id=self._config.project_id,
+            model=model,
+            provider=provider,
+            input_tokens=0,
+            output_tokens=0,
+            token_details=None,
+            latency_ms=latency_ms,
+            status=CallStatus.ERROR,
+            is_model_fallback=is_model_fallback,
         )
 
     def _get_circuit_breaker(self, provider: str) -> CircuitBreaker:

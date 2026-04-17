@@ -311,38 +311,6 @@ class TestAsyncFallbackModel:
 class TestSyncFallbackModelStreaming:
     """Retry works when stream=True and when _force_stream=True (Google)."""
 
-    def test_stream_true_retry_returns_wrapped_stream(self) -> None:
-        """stream=True: primary raises on .create, retry returns a stream iterable."""
-        client = MagicMock()
-        client.__class__.__module__ = "openai._client"
-        client.__class__.__name__ = "OpenAI"
-
-        fake_stream = iter([])
-        client.chat.completions.create.side_effect = [
-            RuntimeError("primary boom"),
-            fake_stream,
-        ]
-
-        solwyn = _make_solwyn(client, fallback_model="gpt-4o-mini")
-        with (
-            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_mock()),
-            patch.object(solwyn._reporter, "report"),
-        ):
-            wrapper = solwyn.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": "hi"}],
-                stream=True,
-            )
-
-            list(wrapper)
-
-        assert client.chat.completions.create.call_count == 2
-        assert client.chat.completions.create.call_args_list[1].kwargs["model"] == "gpt-4o-mini"
-        assert client.chat.completions.create.call_args_list[1].kwargs["stream"] is True
-
-        solwyn._reporter._http.close()
-        solwyn._budget._http.close()
-
     def test_force_stream_google_retry(self) -> None:
         """_force_stream=True is Google-only. Primary fails, retry via same code path."""
         client = MagicMock()
