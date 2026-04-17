@@ -114,7 +114,7 @@ def _allow_budget_mock():
 class TestSyncFallbackModel:
     """Sync client falls back to fallback_model on primary failure."""
 
-    def test_retry_success_sets_is_failover(self) -> None:
+    def test_retry_success_sets_is_model_fallback(self) -> None:
         client, resp = _mock_openai_client_with_failure_then_success()
         solwyn = _make_solwyn(client, fallback_model="gpt-4o-mini")
 
@@ -131,7 +131,7 @@ class TestSyncFallbackModel:
         assert client.chat.completions.create.call_count == 2
         assert client.chat.completions.create.call_args_list[1].kwargs["model"] == "gpt-4o-mini"
         reported = [c.args[0] for c in report_mock.call_args_list]
-        assert any(e.is_failover and e.status.value == "success" for e in reported)
+        assert any(e.is_model_fallback and e.status.value == "success" for e in reported)
 
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
@@ -238,7 +238,7 @@ class TestAsyncFallbackModel:
     """Async client falls back to fallback_model on primary failure."""
 
     @pytest.mark.asyncio
-    async def test_async_retry_success_sets_is_failover(self) -> None:
+    async def test_async_retry_success_sets_is_model_fallback(self) -> None:
         client, resp = _mock_async_openai_client_fail_then_success()
         solwyn = _make_async_solwyn(client, fallback_model="gpt-4o-mini")
 
@@ -251,7 +251,7 @@ class TestAsyncFallbackModel:
         assert client.chat.completions.create.call_count == 2
         assert client.chat.completions.create.call_args_list[1].kwargs["model"] == "gpt-4o-mini"
         reported = [c.args[0] for c in solwyn._reporter.report.call_args_list]
-        assert any(e.is_failover and e.status.value == "success" for e in reported)
+        assert any(e.is_model_fallback and e.status.value == "success" for e in reported)
 
         await solwyn._budget._http.aclose()
         await solwyn._reporter._http.aclose()
@@ -434,7 +434,7 @@ def _mock_anthropic_client_fail_then_success():
 class TestAnthropicFallbackModel:
     """Anthropic's messages.create path retries with fallback_model."""
 
-    def test_anthropic_retry_success_sets_is_failover(self) -> None:
+    def test_anthropic_retry_success_sets_is_model_fallback(self) -> None:
         client, resp = _mock_anthropic_client_fail_then_success()
         solwyn = _make_solwyn(client, fallback_model="claude-3-haiku-20240307")
 
@@ -452,7 +452,7 @@ class TestAnthropicFallbackModel:
         assert client.messages.create.call_count == 2
         assert client.messages.create.call_args_list[1].kwargs["model"] == "claude-3-haiku-20240307"
         reported = [c.args[0] for c in report_mock.call_args_list]
-        assert any(e.is_failover and e.status.value == "success" for e in reported)
+        assert any(e.is_model_fallback and e.status.value == "success" for e in reported)
 
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
@@ -508,13 +508,13 @@ class TestCircuitBreakerStateAfterRescuedRetry:
 
 
 # ---------------------------------------------------------------------------
-# Streaming on_complete fires with is_failover=True
+# Streaming on_complete fires with is_model_fallback=True
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestStreamingOnCompleteFailoverEvent:
-    """When stream retry succeeds, on_complete emits a success event with is_failover=True."""
+    """When stream retry succeeds, on_complete emits a success event with is_model_fallback=True."""
 
     def test_stream_true_on_complete_reports_failover(self) -> None:
         client = MagicMock()
@@ -542,7 +542,7 @@ class TestStreamingOnCompleteFailoverEvent:
         reported = [c.args[0] for c in report_mock.call_args_list]
         success_events = [e for e in reported if e.status.value == "success"]
         assert success_events, "expected at least one success event from on_complete"
-        assert all(e.is_failover for e in success_events)
+        assert all(e.is_model_fallback for e in success_events)
         assert all(e.model == "gpt-4o-mini" for e in success_events)
 
         solwyn._reporter._http.close()

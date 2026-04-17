@@ -55,7 +55,7 @@ class _SolwynBase:
         token_details: TokenDetails | None,
         latency_ms: float,
         status: CallStatus,
-        is_failover: bool,
+        is_model_fallback: bool,
         sdk_instance_id: str | None = None,
         timestamp: datetime | None = None,
     ) -> MetadataEvent:
@@ -69,7 +69,7 @@ class _SolwynBase:
             token_details=token_details,
             latency_ms=latency_ms,
             status=status,
-            is_failover=is_failover,
+            is_model_fallback=is_model_fallback,
             sdk_instance_id=sdk_instance_id or self._sdk_instance_id,
             timestamp=timestamp or datetime.now(UTC),
         )

@@ -190,7 +190,7 @@ The SDK sends a `MetadataEvent` after each LLM call. This is everything it trans
 | `token_details` | `object` | Breakdown: cached, reasoning, audio tokens |
 | `latency_ms` | `float` | Call duration in milliseconds |
 | `status` | `str` | `success`, `error`, or `budget_denied` |
-| `is_failover` | `bool` | Whether the call used `fallback_model` after the primary model failed |
+| `is_model_fallback` | `bool` | Whether the call used `fallback_model` after the primary model failed |
 | `sdk_instance_id` | `str` | Per-process UUID for deduplication |
 | `timestamp` | `datetime` | When the call completed (UTC) |
 

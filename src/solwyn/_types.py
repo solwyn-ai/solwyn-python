@@ -72,7 +72,7 @@ class MetadataEvent(BaseModel):
     )
     latency_ms: float = Field(..., description="End-to-end call latency in ms")
     status: CallStatus = Field(..., description="Call outcome")
-    is_failover: bool = Field(
+    is_model_fallback: bool = Field(
         ..., description="Whether this call used fallback_model after the primary failed"
     )
     sdk_instance_id: str = Field(..., description="Unique SDK instance identifier")

@@ -201,7 +201,7 @@ class Solwyn(_SolwynBase):
         """
         model = kwargs["model"]
         is_streaming = kwargs.get("stream", False) or _force_stream
-        is_failover = False
+        is_model_fallback = False
 
         # 1. Estimate input tokens from input text (length-only; never materializes joined string)
         char_count = estimate_content_length(kwargs)
@@ -231,7 +231,7 @@ class Solwyn(_SolwynBase):
                     token_details=None,
                     latency_ms=0.0,
                     status=CallStatus.BUDGET_DENIED,
-                    is_failover=False,
+                    is_model_fallback=False,
                 )
                 self._reporter.report(event)
             except Exception:
@@ -248,7 +248,7 @@ class Solwyn(_SolwynBase):
 
         # 3. Select provider via circuit breaker
         selected_provider = self._select_provider()
-        is_failover = selected_provider != self._detected_provider.value
+        is_model_fallback = selected_provider != self._detected_provider.value
 
         # 4. Prepare kwargs for streaming if needed
         if is_streaming:
@@ -272,7 +272,7 @@ class Solwyn(_SolwynBase):
                 token_details=None,
                 latency_ms=elapsed_ms,
                 status=CallStatus.ERROR,
-                is_failover=is_failover,
+                is_model_fallback=is_model_fallback,
             )
             self._reporter.report(event)
 
@@ -296,7 +296,7 @@ class Solwyn(_SolwynBase):
                     token_details=None,
                     latency_ms=retry_elapsed_ms,
                     status=CallStatus.ERROR,
-                    is_failover=True,
+                    is_model_fallback=True,
                 )
                 self._reporter.report(retry_event)
                 primary_exc.add_note(
@@ -306,7 +306,7 @@ class Solwyn(_SolwynBase):
 
             model = fallback_model
             kwargs = fallback_kwargs
-            is_failover = True
+            is_model_fallback = True
 
         # 6. Streaming vs non-streaming post-processing
         if is_streaming:
@@ -331,7 +331,7 @@ class Solwyn(_SolwynBase):
                     token_details=token_details,
                     latency_ms=elapsed_ms,
                     status=CallStatus.SUCCESS,
-                    is_failover=is_failover,
+                    is_model_fallback=is_model_fallback,
                 )
                 self._reporter.report(event)
 
@@ -348,7 +348,7 @@ class Solwyn(_SolwynBase):
                     token_details=None,
                     latency_ms=elapsed_ms,
                     status=CallStatus.ERROR,
-                    is_failover=is_failover,
+                    is_model_fallback=is_model_fallback,
                 )
                 self._reporter.report(event)
 
@@ -372,7 +372,7 @@ class Solwyn(_SolwynBase):
             token_details=token_details,
             latency_ms=elapsed_ms,
             status=CallStatus.SUCCESS,
-            is_failover=is_failover,
+            is_model_fallback=is_model_fallback,
         )
         self._reporter.report(event)
 
@@ -514,7 +514,7 @@ class AsyncSolwyn(_SolwynBase):
         """Async core interception logic. See Solwyn._intercepted_call."""
         model = kwargs["model"]
         is_streaming = kwargs.get("stream", False) or _force_stream
-        is_failover = False
+        is_model_fallback = False
 
         char_count = estimate_content_length(kwargs)
         estimated_input_tokens = (
@@ -542,7 +542,7 @@ class AsyncSolwyn(_SolwynBase):
                     token_details=None,
                     latency_ms=0.0,
                     status=CallStatus.BUDGET_DENIED,
-                    is_failover=False,
+                    is_model_fallback=False,
                 )
                 self._reporter.report(event)
             except Exception:
@@ -558,7 +558,7 @@ class AsyncSolwyn(_SolwynBase):
             )
 
         selected_provider = self._select_provider()
-        is_failover = selected_provider != self._detected_provider.value
+        is_model_fallback = selected_provider != self._detected_provider.value
 
         if is_streaming:
             kwargs = self._adapter.prepare_streaming(kwargs)
@@ -580,7 +580,7 @@ class AsyncSolwyn(_SolwynBase):
                 token_details=None,
                 latency_ms=elapsed_ms,
                 status=CallStatus.ERROR,
-                is_failover=is_failover,
+                is_model_fallback=is_model_fallback,
             )
             self._reporter.report(event)
 
@@ -604,7 +604,7 @@ class AsyncSolwyn(_SolwynBase):
                     token_details=None,
                     latency_ms=retry_elapsed_ms,
                     status=CallStatus.ERROR,
-                    is_failover=True,
+                    is_model_fallback=True,
                 )
                 self._reporter.report(retry_event)
                 primary_exc.add_note(
@@ -614,7 +614,7 @@ class AsyncSolwyn(_SolwynBase):
 
             model = fallback_model
             kwargs = fallback_kwargs
-            is_failover = True
+            is_model_fallback = True
 
         if is_streaming:
             accumulator = self._adapter.create_stream_accumulator()
@@ -635,7 +635,7 @@ class AsyncSolwyn(_SolwynBase):
                     token_details=token_details,
                     latency_ms=elapsed_ms,
                     status=CallStatus.SUCCESS,
-                    is_failover=is_failover,
+                    is_model_fallback=is_model_fallback,
                 )
                 self._reporter.report(event)
 
@@ -652,7 +652,7 @@ class AsyncSolwyn(_SolwynBase):
                     token_details=None,
                     latency_ms=elapsed_ms,
                     status=CallStatus.ERROR,
-                    is_failover=is_failover,
+                    is_model_fallback=is_model_fallback,
                 )
                 self._reporter.report(event)
 
@@ -675,7 +675,7 @@ class AsyncSolwyn(_SolwynBase):
             token_details=token_details,
             latency_ms=elapsed_ms,
             status=CallStatus.SUCCESS,
-            is_failover=is_failover,
+            is_model_fallback=is_model_fallback,
         )
         self._reporter.report(event)
 
