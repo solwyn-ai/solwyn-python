@@ -23,7 +23,7 @@ def _make_event(project_id: str, seq: int = 0) -> MetadataEvent:
         output_tokens=50 + seq,
         latency_ms=150.0,
         status="success",
-        is_failover=False,
+        is_model_fallback=False,
         sdk_instance_id=uuid.uuid4().hex,
         timestamp=datetime.now(UTC),
     )

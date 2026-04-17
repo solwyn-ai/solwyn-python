@@ -10,12 +10,30 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from pydantic import BaseModel, ConfigDict
+
 from solwyn._token_details import TokenDetails
 from solwyn._types import CallStatus, MetadataEvent, ProviderName
 from solwyn.circuit_breaker import CircuitBreaker
 from solwyn.config import SolwynConfig
 from solwyn.exceptions import ProviderUnavailableError
 from solwyn.tokenizer import TokenizerManager
+
+
+class _AttemptContext(BaseModel):
+    """Per-attempt state for an intercepted LLM call.
+
+    Immutable. On retry-success, use ``model_copy(update=...)`` to atomically
+    replace all fields that change — prevents the silent-drift bug where a
+    future contributor forgets to update one of several loose locals.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    model: str
+    kwargs: dict[str, object]
+    start_time: float
+    is_model_fallback: bool
 
 
 class _SolwynBase:
@@ -34,19 +52,15 @@ class _SolwynBase:
         self._sdk_instance_id = str(uuid.uuid4())
         self._tokenizer = TokenizerManager()
 
-        # One circuit breaker per configured provider
-        self._circuit_breakers: dict[str, CircuitBreaker] = {}
-        self._circuit_breakers[config.primary_provider.value] = CircuitBreaker(
-            failure_threshold=config.circuit_breaker_failure_threshold,
-            recovery_timeout=config.circuit_breaker_recovery_timeout,
-            success_threshold=config.circuit_breaker_success_threshold,
-        )
-        if config.fallback_provider is not None:
-            self._circuit_breakers[config.fallback_provider.value] = CircuitBreaker(
+        # One circuit breaker per configured provider. Additional providers
+        # get lazily-created breakers via _get_circuit_breaker.
+        self._circuit_breakers: dict[str, CircuitBreaker] = {
+            config.primary_provider.value: CircuitBreaker(
                 failure_threshold=config.circuit_breaker_failure_threshold,
                 recovery_timeout=config.circuit_breaker_recovery_timeout,
                 success_threshold=config.circuit_breaker_success_threshold,
             )
+        }
 
     def _build_metadata_event(
         self,
@@ -59,7 +73,7 @@ class _SolwynBase:
         token_details: TokenDetails | None,
         latency_ms: float,
         status: CallStatus,
-        is_failover: bool,
+        is_model_fallback: bool,
         sdk_instance_id: str | None = None,
         timestamp: datetime | None = None,
     ) -> MetadataEvent:
@@ -73,9 +87,34 @@ class _SolwynBase:
             token_details=token_details,
             latency_ms=latency_ms,
             status=status,
-            is_failover=is_failover,
+            is_model_fallback=is_model_fallback,
             sdk_instance_id=sdk_instance_id or self._sdk_instance_id,
             timestamp=timestamp or datetime.now(UTC),
+        )
+
+    def _build_error_event(
+        self,
+        *,
+        model: str,
+        provider: str,
+        latency_ms: float,
+        is_model_fallback: bool,
+    ) -> MetadataEvent:
+        """Build an error-status MetadataEvent with zeroed token counts.
+
+        Convenience wrapper for the retry/dispatch-failure paths where
+        token_details is unavailable and status is always ERROR.
+        """
+        return self._build_metadata_event(
+            project_id=self._config.project_id,
+            model=model,
+            provider=provider,
+            input_tokens=0,
+            output_tokens=0,
+            token_details=None,
+            latency_ms=latency_ms,
+            status=CallStatus.ERROR,
+            is_model_fallback=is_model_fallback,
         )
 
     def _get_circuit_breaker(self, provider: str) -> CircuitBreaker:
@@ -92,17 +131,17 @@ class _SolwynBase:
         return self._circuit_breakers[provider]
 
     def _select_provider(self) -> str:
-        """Select the best available provider via circuit breaker checks.
+        """Select the primary provider via its circuit breaker.
 
-        Checks the primary provider first. If its circuit is open and a
-        fallback is configured, checks the fallback. If both are open,
-        raises ProviderUnavailableError.
+        Returns the primary provider name if its circuit is CLOSED or HALF_OPEN.
+        Raises ProviderUnavailableError if the circuit is OPEN. Same-provider
+        model fallback is handled at dispatch time in client.py, not here.
 
         Returns:
-            The selected provider name (e.g. "openai" or "anthropic").
+            The primary provider name (e.g. "openai" or "anthropic").
 
         Raises:
-            ProviderUnavailableError: If all providers have open circuits.
+            ProviderUnavailableError: If the primary provider's circuit is open.
         """
         primary = self._config.primary_provider.value
         primary_cb = self._get_circuit_breaker(primary)
@@ -110,24 +149,32 @@ class _SolwynBase:
         if primary_cb.can_proceed():
             return primary
 
-        # Primary is open -- try fallback
-        if self._config.fallback_provider is not None:
-            fallback = self._config.fallback_provider.value
-            fallback_cb = self._get_circuit_breaker(fallback)
-
-            if fallback_cb.can_proceed():
-                return fallback
-
-            # Both open
-            raise ProviderUnavailableError(
-                f"All providers unavailable: {primary} and {fallback} circuits are open",
-                provider=primary,
-                circuit_state=primary_cb.state.value,
-            )
-
-        # No fallback configured, primary is open
         raise ProviderUnavailableError(
-            f"Provider {primary} is unavailable and no fallback is configured",
+            f"Provider {primary} is unavailable (circuit open)",
             provider=primary,
             circuit_state=primary_cb.state.value,
         )
+
+    def _should_retry_with_fallback(self, model: str) -> bool:
+        """Return True if the primary call should be retried with fallback_model.
+
+        Guards against infinite retry loops by refusing to retry when the
+        primary call is already targeting the fallback model.
+        """
+        fm = self._config.fallback_model
+        return fm is not None and model != fm
+
+    def _prepare_fallback_kwargs(self, kwargs: dict[str, object]) -> dict[str, object]:
+        """Return a shallow copy of kwargs with model swapped to fallback_model.
+
+        Does not mutate the input. Caller must have verified
+        _should_retry_with_fallback first.
+        """
+        if self._config.fallback_model is None:
+            raise RuntimeError(
+                "fallback_model is not configured — caller should have checked "
+                "_should_retry_with_fallback() first"
+            )
+        swapped = dict(kwargs)
+        swapped["model"] = self._config.fallback_model
+        return swapped

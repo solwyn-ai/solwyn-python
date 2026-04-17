@@ -22,7 +22,7 @@ def _make_event(**overrides) -> MetadataEvent:
         "output_tokens": 50,
         "latency_ms": 200.0,
         "status": "success",
-        "is_failover": False,
+        "is_model_fallback": False,
         "sdk_instance_id": "test-instance-001",
         "timestamp": datetime.now(UTC),
     }

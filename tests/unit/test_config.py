@@ -280,3 +280,68 @@ class TestAsyncSolwynConstructors:
         assert exc_info.value.field == "api_key"
         assert isinstance(exc_info.value.message, str)
         assert len(exc_info.value.message) > 0
+
+
+# ---------------------------------------------------------------------------
+# fallback_model field
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestEnvVarConstructionFallbackModel:
+    """SOLWYN_FALLBACK_MODEL env var populates config.fallback_model."""
+
+    def test_fallback_model_loads_from_env(self, monkeypatch) -> None:
+        """SOLWYN_FALLBACK_MODEL populates config.fallback_model."""
+        monkeypatch.setenv("SOLWYN_API_KEY", VALID_API_KEY)
+        monkeypatch.setenv("SOLWYN_PROJECT_ID", VALID_PROJECT_ID)
+        monkeypatch.setenv("SOLWYN_FALLBACK_MODEL", "gpt-4o-mini")
+
+        client = _mock_openai_client()
+        solwyn = _make_solwyn(client)
+
+        assert solwyn._config.fallback_model == "gpt-4o-mini"
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+    def test_fallback_model_default_is_none(self, monkeypatch) -> None:
+        """Without config, fallback_model is None."""
+        monkeypatch.setenv("SOLWYN_API_KEY", VALID_API_KEY)
+        monkeypatch.setenv("SOLWYN_PROJECT_ID", VALID_PROJECT_ID)
+
+        client = _mock_openai_client()
+        solwyn = _make_solwyn(client)
+
+        assert solwyn._config.fallback_model is None
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+
+# ---------------------------------------------------------------------------
+# fallback_provider removal
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestFallbackProviderRemoved:
+    """fallback_provider is removed — extra='forbid' rejects it."""
+
+    def test_fallback_provider_kwarg_is_rejected(self) -> None:
+        client = _mock_openai_client()
+        with pytest.raises(ConfigurationError):
+            _make_solwyn(client, fallback_provider="anthropic")
+
+    def test_fallback_provider_env_var_is_ignored(self, monkeypatch) -> None:
+        """SOLWYN_FALLBACK_PROVIDER must not be read anymore."""
+        monkeypatch.setenv("SOLWYN_API_KEY", VALID_API_KEY)
+        monkeypatch.setenv("SOLWYN_PROJECT_ID", VALID_PROJECT_ID)
+        monkeypatch.setenv("SOLWYN_FALLBACK_PROVIDER", "anthropic")
+
+        client = _mock_openai_client()
+        solwyn = _make_solwyn(client)
+        assert not hasattr(solwyn._config, "fallback_provider")
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()

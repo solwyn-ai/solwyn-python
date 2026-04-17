@@ -272,7 +272,7 @@ class TestBudgetCheckBeforeCall:
         assert event.input_tokens > 0  # estimated from "Hello"
         assert event.output_tokens == 0
         assert event.latency_ms == 0.0
-        assert event.is_failover is False
+        assert event.is_model_fallback is False
 
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
@@ -317,7 +317,7 @@ class TestBudgetCheckBeforeCall:
         assert event.input_tokens > 0  # estimated from "Hello" via contents kwarg
         assert event.output_tokens == 0
         assert event.latency_ms == 0.0
-        assert event.is_failover is False
+        assert event.is_model_fallback is False
 
         # BudgetExceededError.estimated_cost should be non-zero
         assert exc_info.value.estimated_cost > 0
