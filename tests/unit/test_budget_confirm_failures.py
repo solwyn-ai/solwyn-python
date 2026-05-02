@@ -13,7 +13,6 @@ from solwyn.budget import BudgetEnforcer
 @pytest.mark.unit
 def test_confirm_failure_emits_error_after_threshold(caplog: object) -> None:
     enforcer = BudgetEnforcer(
-        project_id="proj_test",
         api_url="http://test",
         api_key="sk_test",
     )

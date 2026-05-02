@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from solwyn._types import BudgetMode, ProviderName
-from solwyn._validation import validate_api_key_format, validate_project_id
+from solwyn._validation import validate_project_key_format
 from solwyn.exceptions import ConfigurationError
 
 # Environment variable prefix for automatic loading.
@@ -23,12 +23,11 @@ class SolwynConfig(BaseModel):
     """Validated configuration for the Solwyn SDK.
 
     Values can be supplied directly or loaded from environment variables
-    (``SOLWYN_API_KEY``, ``SOLWYN_PROJECT_ID``, etc.) via a ``@model_validator``.
+    (``SOLWYN_API_KEY``, ``SOLWYN_API_URL``, etc.) via a ``@model_validator``.
     """
 
     # Required fields
     api_key: str
-    project_id: str
 
     # Optional fields with defaults
     api_url: str = "https://api.solwyn.ai"
@@ -59,7 +58,6 @@ class SolwynConfig(BaseModel):
         """Populate missing fields from ``SOLWYN_*`` environment variables."""
         field_env_map = {
             "api_key": "API_KEY",
-            "project_id": "PROJECT_ID",
             "api_url": "API_URL",
             "fail_open": "FAIL_OPEN",
             "budget_mode": "BUDGET_MODE",
@@ -89,15 +87,10 @@ class SolwynConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_credentials(self) -> SolwynConfig:
-        """Validate api_key and project_id formats after construction."""
+        """Validate api_key format after construction."""
         try:
-            validate_api_key_format(self.api_key)
+            validate_project_key_format(self.api_key)
         except ValueError as exc:
             raise ConfigurationError(str(exc), field="api_key") from exc
-
-        try:
-            validate_project_id(self.project_id)
-        except ValueError as exc:
-            raise ConfigurationError(str(exc), field="project_id") from exc
 
         return self

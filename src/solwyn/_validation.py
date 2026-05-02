@@ -1,6 +1,6 @@
-"""Project ID and API key validation.
+"""Project ID and project API key validation.
 
-API key and project ID format validation.
+Project key and project ID format validation.
 
 Security features applied to every validator:
 - Unicode NFC normalization to prevent homograph attacks
@@ -13,8 +13,8 @@ import re
 import unicodedata
 from typing import Final
 
-PROJECT_ID_PATTERN: Final = re.compile(r"^proj_[a-zA-Z0-9]{8,32}$")
-API_KEY_PATTERN: Final = re.compile(r"^sk_solwyn_[a-zA-Z0-9]{32,64}$")
+PROJECT_ID_PATTERN: Final = re.compile(r"^proj_[a-f0-9]{24}$")
+PROJECT_KEY_PATTERN: Final = re.compile(r"^sk_proj_[a-f0-9]{64}$")
 
 
 def _security_checks(value: str, label: str) -> str:
@@ -38,22 +38,22 @@ def validate_project_id(project_id: str) -> str:
     project_id = _security_checks(project_id, "project ID")
 
     if not PROJECT_ID_PATTERN.match(project_id):
-        display = f"{project_id[:20]}..." if len(project_id) > 20 else project_id
+        display = f"{project_id[:24]}..." if len(project_id) > 24 else project_id
         raise ValueError(
-            f"Invalid project ID: must match proj_<8-32 alphanumeric chars>. Got: {display}"
+            f"Invalid project ID: must match proj_<24 lowercase hex chars>. Got: {display}"
         )
 
     return project_id
 
 
-def validate_api_key_format(api_key: str) -> str:
-    """Validate and return an API key (format check only — not authentication)."""
+def validate_project_key_format(api_key: str) -> str:
+    """Validate and return a project API key (format only, not authentication)."""
     api_key = _security_checks(api_key, "API key")
 
-    if not API_KEY_PATTERN.match(api_key):
+    if not PROJECT_KEY_PATTERN.match(api_key):
         display = f"{api_key[:12]}..." if len(api_key) > 12 else "<too short>"
         raise ValueError(
-            f"Invalid API key format: must match sk_solwyn_<32-64 alphanumeric chars>. "
+            f"Invalid API key format: must start with 'sk_proj_' and contain 64 hex chars. "
             f"Got: {display}"
         )
 

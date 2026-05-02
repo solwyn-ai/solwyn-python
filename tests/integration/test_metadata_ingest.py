@@ -7,16 +7,14 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from conftest import Credentials
 
 from solwyn._types import MetadataEvent, ProviderName
 from solwyn.reporter import MetadataReporter
 
 
-def _make_event(project_id: str, seq: int = 0) -> MetadataEvent:
+def _make_event(seq: int = 0) -> MetadataEvent:
     """Create a minimal metadata event for testing."""
     return MetadataEvent(
-        project_id=project_id,
         model="gpt-4o",
         provider=ProviderName.OPENAI,
         input_tokens=100 + seq,
@@ -34,7 +32,7 @@ class TestMetadataReporterDelivery:
     """Reporter delivers events to the ingest endpoint."""
 
     @pytest.mark.integration
-    def test_reporter_flushes_on_close(self, test_credentials: Credentials) -> None:
+    def test_reporter_flushes_on_close(self, test_credentials) -> None:
         """Events queued before close() are flushed without error."""
         reporter = MetadataReporter(
             api_url=test_credentials.api_url,
@@ -42,18 +40,16 @@ class TestMetadataReporterDelivery:
             flush_interval=60.0,  # long interval — force flush via close()
         )
         for i in range(5):
-            reporter.report(_make_event(test_credentials.project_id, seq=i))
+            reporter.report(_make_event(seq=i))
 
         # close() triggers final flush — should not raise
         reporter.close()
 
     @pytest.mark.integration
-    def test_reporter_batch_delivery(
-        self, metadata_reporter: MetadataReporter, test_credentials: Credentials
-    ) -> None:
+    def test_reporter_batch_delivery(self, metadata_reporter: MetadataReporter) -> None:
         """Multiple events are batched and delivered within flush interval."""
         for i in range(10):
-            metadata_reporter.report(_make_event(test_credentials.project_id, seq=i))
+            metadata_reporter.report(_make_event(seq=i))
 
         # Wait for flush interval to fire
         time.sleep(2.0)

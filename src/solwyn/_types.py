@@ -62,7 +62,6 @@ class MetadataEvent(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    project_id: str = Field(..., description="Project identifier (proj_...)")
     model: str = Field(..., max_length=100, description="LLM model name (e.g. gpt-4o)")
     provider: ProviderName = Field(..., description="LLM provider")
     input_tokens: int = Field(..., ge=0, description="Input token count")
@@ -84,7 +83,6 @@ class BudgetCheckRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    project_id: str = Field(..., description="Project identifier (proj_...)")
     estimated_input_tokens: int = Field(
         ..., ge=0, description="Estimated input token count for the pending call"
     )
@@ -108,6 +106,7 @@ class BudgetCheckResponse(BaseModel):
     denied_by_period: str | None = Field(
         ..., description="Which budget period triggered denial (e.g. 'daily')"
     )
+    project_id: str = Field(..., description="Project identifier resolved from the API key")
 
 
 class BudgetConfirmRequest(BaseModel):

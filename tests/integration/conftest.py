@@ -26,7 +26,6 @@ class Credentials:
 
     api_url: str
     api_key: str
-    project_id: str
 
 
 @pytest.fixture(scope="session")
@@ -82,8 +81,7 @@ def _bootstrap_credentials(api_url: str) -> Credentials:
 
         return Credentials(
             api_url=api_url,
-            api_key=project["api_key"],
-            project_id=project["id"],
+            api_key=project["key"],
         )
 
 
@@ -91,17 +89,14 @@ def _bootstrap_credentials(api_url: str) -> Credentials:
 def test_credentials(api_url: str) -> Credentials:
     """Session-scoped test credentials.
 
-    Uses env vars if both SOLWYN_TEST_API_KEY and SOLWYN_TEST_PROJECT_ID
-    are set, otherwise bootstraps via the API.
+    Uses SOLWYN_TEST_API_KEY if set, otherwise bootstraps via the API.
     """
     env_key = os.environ.get("SOLWYN_TEST_API_KEY")
-    env_project = os.environ.get("SOLWYN_TEST_PROJECT_ID")
 
-    if env_key and env_project:
+    if env_key:
         return Credentials(
             api_url=api_url,
             api_key=env_key,
-            project_id=env_project,
         )
 
     return _bootstrap_credentials(api_url)
@@ -116,7 +111,6 @@ def test_credentials(api_url: str) -> Credentials:
 def budget_enforcer(test_credentials: Credentials) -> BudgetEnforcer:
     """Sync BudgetEnforcer pointed at the live API."""
     enforcer = BudgetEnforcer(
-        project_id=test_credentials.project_id,
         api_url=test_credentials.api_url,
         api_key=test_credentials.api_key,
         budget_mode=BudgetMode.ALERT_ONLY,
@@ -130,7 +124,6 @@ def budget_enforcer(test_credentials: Credentials) -> BudgetEnforcer:
 async def async_budget_enforcer(test_credentials: Credentials) -> AsyncBudgetEnforcer:
     """Async BudgetEnforcer pointed at the live API."""
     enforcer = AsyncBudgetEnforcer(
-        project_id=test_credentials.project_id,
         api_url=test_credentials.api_url,
         api_key=test_credentials.api_key,
         budget_mode=BudgetMode.ALERT_ONLY,

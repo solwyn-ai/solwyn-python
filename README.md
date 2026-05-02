@@ -29,8 +29,7 @@ from solwyn import Solwyn
 
 client = Solwyn(
     OpenAI(),
-    api_key="sk_solwyn_...",
-    project_id="proj_abc12345",
+    api_key="sk_proj_...",
 )
 
 response = client.chat.completions.create(
@@ -44,7 +43,7 @@ client.close()
 Or use as a context manager:
 
 ```python
-with Solwyn(OpenAI(), api_key="sk_solwyn_...", project_id="proj_abc12345") as client:
+with Solwyn(OpenAI(), api_key="sk_proj_...") as client:
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": "Hello!"}],
@@ -59,7 +58,7 @@ with Solwyn(OpenAI(), api_key="sk_solwyn_...", project_id="proj_abc12345") as cl
 from openai import OpenAI
 from solwyn import Solwyn
 
-client = Solwyn(OpenAI(), api_key="sk_solwyn_...", project_id="proj_abc12345")
+client = Solwyn(OpenAI(), api_key="sk_proj_...")
 response = client.chat.completions.create(model="gpt-4o", messages=[...])
 ```
 
@@ -69,7 +68,7 @@ response = client.chat.completions.create(model="gpt-4o", messages=[...])
 from anthropic import Anthropic
 from solwyn import Solwyn
 
-client = Solwyn(Anthropic(), api_key="sk_solwyn_...", project_id="proj_abc12345")
+client = Solwyn(Anthropic(), api_key="sk_proj_...")
 response = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=1024, messages=[...])
 ```
 
@@ -79,7 +78,7 @@ response = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=1
 from google import genai
 from solwyn import Solwyn
 
-client = Solwyn(genai.Client(api_key="..."), api_key="sk_solwyn_...", project_id="proj_abc12345")
+client = Solwyn(genai.Client(api_key="..."), api_key="sk_proj_...")
 response = client.models.generate_content(model="gemini-2.0-flash", contents="Hello!")
 ```
 
@@ -91,8 +90,7 @@ from solwyn import AsyncSolwyn
 
 async with AsyncSolwyn(
     AsyncOpenAI(),
-    api_key="sk_solwyn_...",
-    project_id="proj_abc12345",
+    api_key="sk_proj_...",
 ) as client:
     response = await client.chat.completions.create(
         model="gpt-4o",
@@ -122,8 +120,7 @@ Set `budget_mode` to control spending:
 ```python
 client = Solwyn(
     OpenAI(),
-    api_key="sk_solwyn_...",
-    project_id="proj_abc12345",
+    api_key="sk_proj_...",
     budget_mode="hard_deny",
 )
 ```
@@ -146,8 +143,7 @@ except BudgetExceededError as e:
 
 | Parameter | Env Var | Default | Description |
 |-----------|---------|---------|-------------|
-| `api_key` | `SOLWYN_API_KEY` | *required* | Solwyn API key |
-| `project_id` | `SOLWYN_PROJECT_ID` | *required* | Project identifier |
+| `api_key` | `SOLWYN_API_KEY` | *required* | Solwyn project API key |
 | `api_url` | `SOLWYN_API_URL` | `https://api.solwyn.ai` | Solwyn API endpoint |
 | `fail_open` | `SOLWYN_FAIL_OPEN` | `True` | Allow LLM calls when Solwyn API is unreachable |
 | `budget_mode` | `SOLWYN_BUDGET_MODE` | `alert_only` | Budget enforcement mode |
@@ -156,8 +152,7 @@ except BudgetExceededError as e:
 Use env vars to avoid passing credentials in code:
 
 ```sh
-export SOLWYN_API_KEY="sk_solwyn_..."
-export SOLWYN_PROJECT_ID="proj_abc12345"
+export SOLWYN_API_KEY="sk_proj_..."
 ```
 
 ```python
@@ -172,7 +167,7 @@ All SDK errors inherit from `SolwynError`:
 |-----------|-------------|
 | `BudgetExceededError` | Budget exceeded in `hard_deny` mode |
 | `ProviderUnavailableError` | Circuit breaker is open |
-| `ConfigurationError` | Invalid API key or project ID format |
+| `ConfigurationError` | Invalid API key format |
 
 Provider errors (e.g., `openai.RateLimitError`) pass through unmodified.
 
@@ -182,7 +177,6 @@ The SDK sends a `MetadataEvent` after each LLM call. This is everything it trans
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `project_id` | `str` | Project identifier |
 | `model` | `str` | Model name (e.g., `gpt-4o`) |
 | `provider` | `str` | `openai`, `anthropic`, or `google` |
 | `input_tokens` | `int` | Input token count |

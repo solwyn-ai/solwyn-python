@@ -29,13 +29,13 @@ _DENY_RESPONSE = {
     "budget_limit": 100.0,
     "current_usage": 99.5,
     "denied_by_period": "monthly",
+    "project_id": VALID_PROJECT_ID,
 }
 
 
 def _make_enforcer(**overrides):
     """Create a BudgetEnforcer with sensible test defaults."""
     defaults = {
-        "project_id": VALID_PROJECT_ID,
         "api_url": "https://api.test.solwyn.ai",
         "api_key": VALID_API_KEY,
         "budget_mode": BudgetMode.ALERT_ONLY,
@@ -57,19 +57,17 @@ class TestBudgetEnforcerBase:
 
     def test_build_check_request(self) -> None:
         base = _BudgetEnforcerBase(
-            project_id=VALID_PROJECT_ID,
             api_url="https://api.test.solwyn.ai",
             api_key=VALID_API_KEY,
         )
         req = base._build_check_request(500, "gpt-4o", "openai")
-        assert req.project_id == VALID_PROJECT_ID
+        assert not hasattr(req, "project_id")
         assert req.estimated_input_tokens == 500
         assert req.model == "gpt-4o"
         assert req.provider == "openai"
 
     def test_local_cost_tracking(self) -> None:
         base = _BudgetEnforcerBase(
-            project_id=VALID_PROJECT_ID,
             api_url="https://api.test.solwyn.ai",
             api_key=VALID_API_KEY,
         )
@@ -80,7 +78,6 @@ class TestBudgetEnforcerBase:
 
     def test_cache_allow_decisions(self) -> None:
         base = _BudgetEnforcerBase(
-            project_id=VALID_PROJECT_ID,
             api_url="https://api.test.solwyn.ai",
             api_key=VALID_API_KEY,
             cache_ttl=5,
@@ -92,7 +89,6 @@ class TestBudgetEnforcerBase:
 
     def test_never_cache_deny_decisions(self) -> None:
         base = _BudgetEnforcerBase(
-            project_id=VALID_PROJECT_ID,
             api_url="https://api.test.solwyn.ai",
             api_key=VALID_API_KEY,
             cache_ttl=5,
@@ -105,7 +101,6 @@ class TestBudgetEnforcerBase:
 
     def test_cache_expires(self) -> None:
         base = _BudgetEnforcerBase(
-            project_id=VALID_PROJECT_ID,
             api_url="https://api.test.solwyn.ai",
             api_key=VALID_API_KEY,
             cache_ttl=0,  # Expire immediately
@@ -251,6 +246,7 @@ class TestLocalEnforcement:
             "budget_limit": 100.0,
             "current_usage": 5.0,
             "denied_by_period": None,
+            "project_id": VALID_PROJECT_ID,
         }
         mock_response.raise_for_status = MagicMock()
         with patch.object(enforcer._http, "post", return_value=mock_response):
@@ -280,6 +276,7 @@ class TestLocalEnforcement:
             "budget_limit": 100.0,
             "current_usage": 0.0,
             "denied_by_period": None,
+            "project_id": VALID_PROJECT_ID,
         }
         mock_response.raise_for_status = MagicMock()
         with patch.object(enforcer._http, "post", return_value=mock_response):

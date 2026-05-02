@@ -36,7 +36,6 @@ def _make_solwyn(client, **overrides):
     """Create a Solwyn wrapper with mocked background thread."""
     defaults = {
         "api_key": VALID_API_KEY,
-        "project_id": VALID_PROJECT_ID,
     }
     defaults.update(overrides)
     with patch("solwyn.reporter.MetadataReporter._flush_loop"):
@@ -70,6 +69,7 @@ class TestBudgetExceededErrorFieldCorrectness:
             "budget_limit": 500.0,
             "current_usage": 499.0,
             "denied_by_period": "monthly",
+            "project_id": VALID_PROJECT_ID,
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response
@@ -112,6 +112,7 @@ class TestBudgetExceededErrorFieldCorrectness:
             "budget_limit": 1000.0,  # This is the actual limit
             "current_usage": 950.0,
             "denied_by_period": "monthly",
+            "project_id": VALID_PROJECT_ID,
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response

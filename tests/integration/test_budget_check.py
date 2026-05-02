@@ -42,7 +42,6 @@ class TestBudgetCheckFailOpen:
     @pytest.mark.integration
     def test_fail_open_allows_on_bad_url(self, test_credentials: Credentials) -> None:
         enforcer = BudgetEnforcer(
-            project_id=test_credentials.project_id,
             api_url="http://localhost:1",  # unreachable
             api_key=test_credentials.api_key,
             budget_mode=BudgetMode.ALERT_ONLY,

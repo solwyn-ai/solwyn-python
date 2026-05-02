@@ -65,7 +65,6 @@ class _SolwynBase:
     def _build_metadata_event(
         self,
         *,
-        project_id: str,
         model: str,
         provider: str,
         input_tokens: int,
@@ -79,7 +78,6 @@ class _SolwynBase:
     ) -> MetadataEvent:
         """Build a MetadataEvent for reporting to the cloud API."""
         return MetadataEvent(
-            project_id=project_id,
             model=model,
             provider=ProviderName(provider),
             input_tokens=input_tokens,
@@ -106,7 +104,6 @@ class _SolwynBase:
         token_details is unavailable and status is always ERROR.
         """
         return self._build_metadata_event(
-            project_id=self._config.project_id,
             model=model,
             provider=provider,
             input_tokens=0,

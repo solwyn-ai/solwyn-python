@@ -32,6 +32,7 @@ def test_solwyn_error_catches_all_families() -> None:
         (
             BudgetExceededError,
             {
+                "project_id": "proj_" + "a" * 24,
                 "budget_limit": 100.0,
                 "current_usage": 120.0,
                 "estimated_cost": 5.0,
@@ -44,6 +45,8 @@ def test_solwyn_error_catches_all_families() -> None:
     ]
     for exc_class, kwargs in cases:
         try:
+            if exc_class is BudgetExceededError:
+                raise exc_class(**kwargs)  # type: ignore[arg-type]
             raise exc_class("test", **kwargs)  # type: ignore[arg-type]
         except SolwynError:
             pass  # expected
@@ -54,7 +57,7 @@ def test_solwyn_error_catches_all_families() -> None:
 @pytest.mark.unit
 def test_exceptions_have_useful_repr() -> None:
     exc = BudgetExceededError(
-        "over budget",
+        project_id="proj_" + "a" * 24,
         budget_limit=100.0,
         current_usage=120.0,
         estimated_cost=5.0,

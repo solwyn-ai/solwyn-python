@@ -40,6 +40,7 @@ class BudgetCheckResult(BaseModel):
 
     allowed: bool
     remaining_budget: float
+    project_id: str | None = None
     reservation_id: str | None = None
     mode: BudgetMode = BudgetMode.ALERT_ONLY
     warning: str | None = None
@@ -56,14 +57,12 @@ class _BudgetEnforcerBase:
 
     def __init__(
         self,
-        project_id: str,
         api_url: str,
         api_key: str,
         budget_mode: BudgetMode = BudgetMode.ALERT_ONLY,
         fail_open: bool = True,
         cache_ttl: int = 5,
     ) -> None:
-        self.project_id = project_id
         self.api_url = api_url.rstrip("/")
         self.api_key = api_key
         self.budget_mode = budget_mode
@@ -94,7 +93,6 @@ class _BudgetEnforcerBase:
     ) -> BudgetCheckRequest:
         """Build a BudgetCheckRequest for the cloud API."""
         return BudgetCheckRequest(
-            project_id=self.project_id,
             estimated_input_tokens=estimated_input_tokens,
             model=model,
             provider=ProviderName(provider),
@@ -156,6 +154,7 @@ class _BudgetEnforcerBase:
             return BudgetCheckResult(
                 allowed=True,
                 remaining_budget=response.remaining_budget,
+                project_id=response.project_id,
                 reservation_id=response.reservation_id,
                 mode=response.mode,
                 budget_limit=response.budget_limit,
@@ -172,6 +171,7 @@ class _BudgetEnforcerBase:
             return BudgetCheckResult(
                 allowed=True,
                 remaining_budget=response.remaining_budget,
+                project_id=response.project_id,
                 reservation_id=response.reservation_id,
                 mode=response.mode,
                 warning=(
@@ -186,6 +186,7 @@ class _BudgetEnforcerBase:
         return BudgetCheckResult(
             allowed=False,
             remaining_budget=response.remaining_budget,
+            project_id=response.project_id,
             mode=response.mode,
             warning=(
                 f"Budget exceeded: ${response.current_usage:.2f}/${response.budget_limit:.2f} used"
@@ -289,7 +290,6 @@ class BudgetEnforcer(_BudgetEnforcerBase):
 
     def __init__(
         self,
-        project_id: str,
         api_url: str,
         api_key: str,
         budget_mode: BudgetMode = BudgetMode.ALERT_ONLY,
@@ -297,7 +297,6 @@ class BudgetEnforcer(_BudgetEnforcerBase):
         cache_ttl: int = 5,
     ) -> None:
         super().__init__(
-            project_id=project_id,
             api_url=api_url,
             api_key=api_key,
             budget_mode=budget_mode,
@@ -333,6 +332,7 @@ class BudgetEnforcer(_BudgetEnforcerBase):
                 return BudgetCheckResult(
                     allowed=True,
                     remaining_budget=cached.remaining_budget,
+                    project_id=cached.project_id,
                     reservation_id=None,  # Don't reuse — each call needs its own reservation
                     mode=cached.mode,
                     budget_limit=cached.budget_limit,
@@ -415,7 +415,6 @@ class AsyncBudgetEnforcer(_BudgetEnforcerBase):
 
     def __init__(
         self,
-        project_id: str,
         api_url: str,
         api_key: str,
         budget_mode: BudgetMode = BudgetMode.ALERT_ONLY,
@@ -423,7 +422,6 @@ class AsyncBudgetEnforcer(_BudgetEnforcerBase):
         cache_ttl: int = 5,
     ) -> None:
         super().__init__(
-            project_id=project_id,
             api_url=api_url,
             api_key=api_key,
             budget_mode=budget_mode,
@@ -449,6 +447,7 @@ class AsyncBudgetEnforcer(_BudgetEnforcerBase):
             return BudgetCheckResult(
                 allowed=True,
                 remaining_budget=cached.remaining_budget,
+                project_id=cached.project_id,
                 reservation_id=None,  # Don't reuse — each call needs its own reservation
                 mode=cached.mode,
                 budget_limit=cached.budget_limit,

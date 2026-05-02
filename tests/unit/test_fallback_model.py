@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import VALID_API_KEY, VALID_PROJECT_ID
+from conftest import VALID_API_KEY
 
 from solwyn._base import _SolwynBase
 from solwyn._types import CircuitState
@@ -18,7 +18,6 @@ from solwyn.config import SolwynConfig
 def _cfg(**overrides):
     defaults = {
         "api_key": VALID_API_KEY,
-        "project_id": VALID_PROJECT_ID,
     }
     defaults.update(overrides)
     return SolwynConfig(**defaults)
@@ -94,7 +93,7 @@ def _mock_openai_client_always_fail():
 
 
 def _make_solwyn(client, **overrides):
-    defaults = {"api_key": VALID_API_KEY, "project_id": VALID_PROJECT_ID}
+    defaults = {"api_key": VALID_API_KEY}
     defaults.update(overrides)
     with patch("solwyn.reporter.MetadataReporter._flush_loop"):
         solwyn = Solwyn(client, **defaults)
@@ -239,7 +238,7 @@ def _mock_async_openai_client_always_fail():
 
 
 def _make_async_solwyn(client, **overrides):
-    defaults = {"api_key": VALID_API_KEY, "project_id": VALID_PROJECT_ID}
+    defaults = {"api_key": VALID_API_KEY}
     defaults.update(overrides)
     solwyn = AsyncSolwyn(client, **defaults)
     solwyn._budget.check_budget = AsyncMock(return_value=_allow_budget_mock())

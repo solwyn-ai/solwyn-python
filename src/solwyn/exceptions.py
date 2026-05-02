@@ -26,6 +26,7 @@ class BudgetExceededError(SolwynError):
     the SDK logs a warning instead.
 
     Attributes:
+        project_id: Project identifier resolved by the API, if available.
         budget_limit: The configured spending cap (dollars).
         current_usage: Spending already consumed in the current period.
         estimated_cost: Estimated cost of the blocked request.
@@ -35,15 +36,18 @@ class BudgetExceededError(SolwynError):
 
     def __init__(
         self,
-        message: str,
         *,
+        project_id: str | None,
         budget_limit: float,
         current_usage: float,
         estimated_cost: float,
         budget_period: str,
         mode: str,
     ) -> None:
+        project_label = project_id if project_id is not None else "unknown project"
+        message = f"Budget exceeded for project {project_label}"
         super().__init__(message)
+        self.project_id = project_id
         self.budget_limit = budget_limit
         self.current_usage = current_usage
         self.estimated_cost = estimated_cost
