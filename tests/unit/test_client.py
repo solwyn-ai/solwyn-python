@@ -50,7 +50,6 @@ def _make_solwyn(client, **overrides):
     """Create a Solwyn wrapper with mocked budget and reporter."""
     defaults = {
         "api_key": VALID_API_KEY,
-        "project_id": VALID_PROJECT_ID,
     }
     defaults.update(overrides)
 
@@ -218,6 +217,7 @@ class TestBudgetCheckBeforeCall:
             "budget_limit": 10.0,
             "current_usage": 10.0,
             "denied_by_period": "monthly",
+            "project_id": VALID_PROJECT_ID,
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response
@@ -250,6 +250,7 @@ class TestBudgetCheckBeforeCall:
             "budget_limit": 10.0,
             "current_usage": 10.0,
             "denied_by_period": "monthly",
+            "project_id": VALID_PROJECT_ID,
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response
@@ -292,6 +293,7 @@ class TestBudgetCheckBeforeCall:
             "budget_limit": 10.0,
             "current_usage": 10.0,
             "denied_by_period": "monthly",
+            "project_id": VALID_PROJECT_ID,
         }
         mock_budget_response = MagicMock()
         mock_budget_response.json.return_value = deny_response
@@ -399,7 +401,6 @@ class TestContextManager:
             Solwyn(
                 client,
                 api_key=VALID_API_KEY,
-                project_id=VALID_PROJECT_ID,
             ) as solwyn,
         ):
             # Stop reporter thread
@@ -795,7 +796,6 @@ def _make_async_solwyn(client, **overrides):
     """Create an AsyncSolwyn wrapper with mocked budget and reporter."""
     defaults = {
         "api_key": VALID_API_KEY,
-        "project_id": VALID_PROJECT_ID,
     }
     defaults.update(overrides)
     solwyn = AsyncSolwyn(client, **defaults)

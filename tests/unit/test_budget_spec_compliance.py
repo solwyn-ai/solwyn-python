@@ -25,7 +25,6 @@ from solwyn.budget import BudgetEnforcer
 def _make_enforcer(**overrides):
     """Create a BudgetEnforcer with sensible test defaults."""
     defaults = {
-        "project_id": VALID_PROJECT_ID,
         "api_url": "https://api.test.solwyn.ai",
         "api_key": VALID_API_KEY,
         "budget_mode": BudgetMode.ALERT_ONLY,
@@ -53,6 +52,7 @@ def _mock_cloud_response(
         "budget_limit": budget_limit,
         "current_usage": current_usage,
         "denied_by_period": None if allowed else "monthly",
+        "project_id": VALID_PROJECT_ID,
     }
     mock_response.raise_for_status = MagicMock()
     return mock_response

@@ -55,7 +55,6 @@ def test_build_confirm_request_exists_on_base() -> None:
 def test_build_confirm_request_returns_pydantic_model() -> None:
     """build_confirm_request must return a BudgetConfirmRequest, not a dict."""
     enforcer = BudgetEnforcer(
-        project_id="proj_test",
         api_url="http://localhost:8000",
         api_key="sk_test",
     )

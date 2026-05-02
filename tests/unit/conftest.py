@@ -11,8 +11,8 @@ from solwyn.circuit_breaker import CircuitBreaker
 from solwyn.config import SolwynConfig
 
 # Valid credentials that pass format validation
-VALID_API_KEY = "sk_solwyn_" + "a" * 32
-VALID_PROJECT_ID = "proj_abc12345"
+VALID_API_KEY = "sk_proj_" + "a" * 64
+VALID_PROJECT_ID = "proj_" + "a" * 24
 
 # Standard allow response for budget mock patching
 ALLOW_BUDGET_RESPONSE = {
@@ -23,6 +23,7 @@ ALLOW_BUDGET_RESPONSE = {
     "budget_limit": 100.0,
     "current_usage": 20.0,
     "denied_by_period": None,
+    "project_id": VALID_PROJECT_ID,
 }
 
 
@@ -42,8 +43,7 @@ def mock_async_httpx_client():
 def solwyn_config():
     """Return a SolwynConfig with test defaults."""
     return SolwynConfig(
-        api_key="sk_solwyn_test1234567890abcdef1234567890abcdef",
-        project_id="proj_test12345678",
+        api_key=VALID_API_KEY,
     )
 
 

@@ -51,7 +51,7 @@ def _mock_google_client():
 
 
 def _make_solwyn(client, **overrides):
-    defaults = {"api_key": VALID_API_KEY, "project_id": VALID_PROJECT_ID}
+    defaults = {"api_key": VALID_API_KEY}
     defaults.update(overrides)
     return Solwyn(client, **defaults)
 
@@ -109,6 +109,7 @@ class TestAnthropicMessagesProxy:
             "remaining_budget": 0.0,
             "mode": "hard_deny",
             "denied_by_period": "monthly",
+            "project_id": VALID_PROJECT_ID,
         }
         with _mock_budget(solwyn, deny_response), pytest.raises(BudgetExceededError):
             solwyn.messages.create(
@@ -221,7 +222,7 @@ class TestGoogleModelsProxy:
 
 
 def _make_async_solwyn(client, **overrides):
-    defaults = {"api_key": VALID_API_KEY, "project_id": VALID_PROJECT_ID}
+    defaults = {"api_key": VALID_API_KEY}
     defaults.update(overrides)
     return AsyncSolwyn(client, **defaults)
 

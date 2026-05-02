@@ -10,8 +10,7 @@ Usage::
 
     client = Solwyn(
         OpenAI(),
-        api_key="sk_solwyn_...",
-        project_id="proj_abc12345",
+        api_key="sk_proj_...",
     )
     response = client.chat.completions.create(
         model="gpt-4o",
@@ -83,8 +82,7 @@ class Solwyn(_SolwynBase):
 
         client = Solwyn(
             OpenAI(),
-            api_key="sk_solwyn_...",
-            project_id="proj_abc12345",
+            api_key="sk_proj_...",
         )
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -98,7 +96,6 @@ class Solwyn(_SolwynBase):
         client: object,
         *,
         api_key: str | None = None,
-        project_id: str | None = None,
         **config_kwargs: object,
     ) -> None:
         # Detect provider and store adapter for usage extraction
@@ -109,8 +106,11 @@ class Solwyn(_SolwynBase):
         # match all three. Type safety stops at the _sync_dispatch boundary.
         self._client: Any = client
 
+        if "project_id" in config_kwargs:
+            raise TypeError("unexpected keyword argument 'project_id'")
+
         # Build config — SolwynConfig._load_from_env fills missing
-        # values from SOLWYN_API_KEY / SOLWYN_PROJECT_ID env vars.
+        # values from SOLWYN_API_KEY env var.
         # cfg_kwargs stays dict[str, Any]: mypy can't verify Pydantic's **kwargs
         # validation against SolwynConfig's typed fields, so tightening here
         # adds noise without type-safety gain. SolwynConfig validates at runtime.
@@ -120,8 +120,6 @@ class Solwyn(_SolwynBase):
         }
         if api_key is not None:
             cfg_kwargs["api_key"] = api_key
-        if project_id is not None:
-            cfg_kwargs["project_id"] = project_id
         try:
             config = SolwynConfig(**cfg_kwargs)
         except ValidationError as exc:
@@ -134,7 +132,6 @@ class Solwyn(_SolwynBase):
 
         # Budget enforcer
         self._budget = BudgetEnforcer(
-            project_id=config.project_id,
             api_url=config.api_url,
             api_key=config.api_key,
             budget_mode=config.budget_mode,
@@ -232,7 +229,6 @@ class Solwyn(_SolwynBase):
             # even for calls that were blocked by hard-deny.
             try:
                 event = self._build_metadata_event(
-                    project_id=self._config.project_id,
                     model=model,
                     provider=self._detected_provider.value,
                     input_tokens=estimated_input_tokens,
@@ -247,7 +243,7 @@ class Solwyn(_SolwynBase):
                 logger.warning("Failed to report budget_denied metadata event", exc_info=True)
 
             raise BudgetExceededError(
-                f"Budget exceeded for project {self._config.project_id}",
+                project_id=budget_result.project_id,
                 budget_limit=budget_result.budget_limit,
                 current_usage=budget_result.current_usage,
                 estimated_cost=estimated_input_tokens * DEFAULT_COST_PER_TOKEN,
@@ -332,7 +328,6 @@ class Solwyn(_SolwynBase):
                     )
                     self._reporter.report_confirm(confirm)
                 event = self._build_metadata_event(
-                    project_id=self._config.project_id,
                     model=ctx.model,
                     provider=selected_provider,
                     input_tokens=token_details.input_tokens,
@@ -368,7 +363,6 @@ class Solwyn(_SolwynBase):
             self._budget.confirm_cost(budget_result.reservation_id, ctx.model, token_details)
 
         event = self._build_metadata_event(
-            project_id=self._config.project_id,
             model=ctx.model,
             provider=selected_provider,
             input_tokens=token_details.input_tokens,
@@ -415,8 +409,7 @@ class AsyncSolwyn(_SolwynBase):
 
         async with AsyncSolwyn(
             AsyncOpenAI(),
-            api_key="sk_solwyn_...",
-            project_id="proj_abc12345",
+            api_key="sk_proj_...",
         ) as client:
             response = await client.chat.completions.create(
                 model="gpt-4o",
@@ -429,7 +422,6 @@ class AsyncSolwyn(_SolwynBase):
         client: object,
         *,
         api_key: str | None = None,
-        project_id: str | None = None,
         **config_kwargs: object,
     ) -> None:
         # Detect provider and store adapter for usage extraction
@@ -437,6 +429,9 @@ class AsyncSolwyn(_SolwynBase):
         self._detected_provider = ProviderName(self._adapter.name)
         # See sync Solwyn.__init__ for why _client is typed Any.
         self._client: Any = client
+
+        if "project_id" in config_kwargs:
+            raise TypeError("unexpected keyword argument 'project_id'")
 
         # cfg_kwargs stays dict[str, Any]: mypy can't verify Pydantic's **kwargs
         # validation against SolwynConfig's typed fields, so tightening here
@@ -447,8 +442,6 @@ class AsyncSolwyn(_SolwynBase):
         }
         if api_key is not None:
             cfg_kwargs["api_key"] = api_key
-        if project_id is not None:
-            cfg_kwargs["project_id"] = project_id
         try:
             config = SolwynConfig(**cfg_kwargs)
         except ValidationError as exc:
@@ -460,7 +453,6 @@ class AsyncSolwyn(_SolwynBase):
         super().__init__(config)
 
         self._budget = AsyncBudgetEnforcer(
-            project_id=config.project_id,
             api_url=config.api_url,
             api_key=config.api_key,
             budget_mode=config.budget_mode,
@@ -545,7 +537,6 @@ class AsyncSolwyn(_SolwynBase):
             # even for calls that were blocked by hard-deny.
             try:
                 event = self._build_metadata_event(
-                    project_id=self._config.project_id,
                     model=model,
                     provider=self._detected_provider.value,
                     input_tokens=estimated_input_tokens,
@@ -560,7 +551,7 @@ class AsyncSolwyn(_SolwynBase):
                 logger.warning("Failed to report budget_denied metadata event", exc_info=True)
 
             raise BudgetExceededError(
-                f"Budget exceeded for project {self._config.project_id}",
+                project_id=budget_result.project_id,
                 budget_limit=budget_result.budget_limit,
                 current_usage=budget_result.current_usage,
                 estimated_cost=estimated_input_tokens * DEFAULT_COST_PER_TOKEN,
@@ -638,7 +629,6 @@ class AsyncSolwyn(_SolwynBase):
                         budget_result.reservation_id, ctx.model, token_details
                     )
                 event = self._build_metadata_event(
-                    project_id=self._config.project_id,
                     model=ctx.model,
                     provider=selected_provider,
                     input_tokens=token_details.input_tokens,
@@ -673,7 +663,6 @@ class AsyncSolwyn(_SolwynBase):
             await self._budget.confirm_cost(budget_result.reservation_id, ctx.model, token_details)
 
         event = self._build_metadata_event(
-            project_id=self._config.project_id,
             model=ctx.model,
             provider=selected_provider,
             input_tokens=token_details.input_tokens,

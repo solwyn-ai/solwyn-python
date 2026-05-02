@@ -54,7 +54,6 @@ def test_reporter_report_confirm_concurrent_appends() -> None:
 def test_budget_enforcer_local_costs_concurrent() -> None:
     """Concurrent _track_local_cost calls must not lose writes."""
     enforcer = BudgetEnforcer(
-        project_id="proj_test",
         api_url="http://test",
         api_key="sk_test",
     )

@@ -20,13 +20,13 @@ _DENY_RESPONSE = {
     "budget_limit": 100.0,
     "current_usage": 99.5,
     "denied_by_period": "monthly",
+    "project_id": VALID_PROJECT_ID,
 }
 
 
 def _make_async_enforcer(**overrides) -> AsyncBudgetEnforcer:
     """Create an AsyncBudgetEnforcer with sensible test defaults."""
     defaults = {
-        "project_id": VALID_PROJECT_ID,
         "api_url": "https://api.test.solwyn.ai",
         "api_key": VALID_API_KEY,
         "budget_mode": BudgetMode.ALERT_ONLY,

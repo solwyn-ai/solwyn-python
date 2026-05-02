@@ -19,7 +19,6 @@ from solwyn.reporter import (
 def _make_event(**overrides) -> MetadataEvent:
     """Create a MetadataEvent with sensible test defaults."""
     defaults = {
-        "project_id": "proj_abc12345",
         "model": "gpt-4o",
         "provider": ProviderName.OPENAI,
         "input_tokens": 100,
