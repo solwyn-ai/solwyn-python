@@ -11,9 +11,13 @@ or when not requested — all missing fields default to 0.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from solwyn._token_details import TokenDetails
+from solwyn._types import SERVICE_TIER_MAX_LENGTH
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_openai_usage(response: Any) -> TokenDetails:
@@ -42,15 +46,15 @@ def _extract_chat_completions(usage: Any) -> TokenDetails:
     completion_details = getattr(usage, "completion_tokens_details", None)
 
     return TokenDetails(
-        input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-        output_tokens=getattr(usage, "completion_tokens", 0) or 0,
-        cached_input_tokens=getattr(prompt_details, "cached_tokens", 0) or 0,
-        audio_input_tokens=getattr(prompt_details, "audio_tokens", 0) or 0,
-        reasoning_tokens=getattr(completion_details, "reasoning_tokens", 0) or 0,
-        audio_output_tokens=getattr(completion_details, "audio_tokens", 0) or 0,
-        accepted_prediction_tokens=getattr(completion_details, "accepted_prediction_tokens", 0)
+        input_tokens=getattr(usage, "prompt_tokens", None) or 0,
+        output_tokens=getattr(usage, "completion_tokens", None) or 0,
+        cached_input_tokens=getattr(prompt_details, "cached_tokens", None) or 0,
+        audio_input_tokens=getattr(prompt_details, "audio_tokens", None) or 0,
+        reasoning_tokens=getattr(completion_details, "reasoning_tokens", None) or 0,
+        audio_output_tokens=getattr(completion_details, "audio_tokens", None) or 0,
+        accepted_prediction_tokens=getattr(completion_details, "accepted_prediction_tokens", None)
         or 0,
-        rejected_prediction_tokens=getattr(completion_details, "rejected_prediction_tokens", 0)
+        rejected_prediction_tokens=getattr(completion_details, "rejected_prediction_tokens", None)
         or 0,
     )
 
@@ -68,15 +72,29 @@ def _extract_responses_api(usage: Any) -> TokenDetails:
     output_details = getattr(usage, "output_tokens_details", None)
 
     return TokenDetails(
-        input_tokens=getattr(usage, "input_tokens", 0) or 0,
-        output_tokens=getattr(usage, "output_tokens", 0) or 0,
-        cached_input_tokens=getattr(input_details, "cached_tokens", 0) or 0,
-        audio_input_tokens=getattr(input_details, "audio_tokens", 0) or 0,
-        reasoning_tokens=getattr(output_details, "reasoning_tokens", 0) or 0,
-        audio_output_tokens=getattr(output_details, "audio_tokens", 0) or 0,
-        accepted_prediction_tokens=getattr(output_details, "accepted_prediction_tokens", 0) or 0,
-        rejected_prediction_tokens=getattr(output_details, "rejected_prediction_tokens", 0) or 0,
+        input_tokens=getattr(usage, "input_tokens", None) or 0,
+        output_tokens=getattr(usage, "output_tokens", None) or 0,
+        cached_input_tokens=getattr(input_details, "cached_tokens", None) or 0,
+        audio_input_tokens=getattr(input_details, "audio_tokens", None) or 0,
+        reasoning_tokens=getattr(output_details, "reasoning_tokens", None) or 0,
+        audio_output_tokens=getattr(output_details, "audio_tokens", None) or 0,
+        accepted_prediction_tokens=getattr(output_details, "accepted_prediction_tokens", None) or 0,
+        rejected_prediction_tokens=getattr(output_details, "rejected_prediction_tokens", None) or 0,
     )
+
+
+def _extract_service_tier(response: Any) -> str | None:
+    """Return a bounded service_tier value, or None when absent/non-string."""
+    tier = getattr(response, "service_tier", None)
+    if not isinstance(tier, str):
+        return None
+    if len(tier) > SERVICE_TIER_MAX_LENGTH:
+        logger.warning(
+            "OpenAI service_tier exceeds %d characters; truncating",
+            SERVICE_TIER_MAX_LENGTH,
+        )
+        return tier[:SERVICE_TIER_MAX_LENGTH]
+    return tier
 
 
 class OpenAIAdapter:
@@ -104,10 +122,7 @@ class OpenAIAdapter:
         OpenAI tiers (default/flex/priority/batch) price at different rates;
         the API stores this on cost_events for future per-tier repricing.
         """
-        tier = getattr(response, "service_tier", None)
-        if not isinstance(tier, str):
-            return None
-        return tier
+        return _extract_service_tier(response)
 
     def prepare_streaming(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Inject stream_options so usage appears in the final chunk."""
@@ -146,7 +161,4 @@ class OpenAIStreamAccumulator:
         """Return service_tier from the saved final-chunk, or None if absent."""
         if self._usage_chunk is None:
             return None
-        tier = getattr(self._usage_chunk, "service_tier", None)
-        if not isinstance(tier, str):
-            return None
-        return tier
+        return _extract_service_tier(self._usage_chunk)

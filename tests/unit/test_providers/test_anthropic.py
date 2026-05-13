@@ -229,6 +229,21 @@ class TestAnthropicAdapterExtractUsage:
         assert result.output_tokens == 500
         assert result.cached_input_tokens == 200
 
+    def test_aggregate_only_cache_creation_falls_back_to_5m_bucket(self) -> None:
+        """Non-beta responses may only carry cache_creation_input_tokens."""
+        resp = SimpleNamespace(
+            usage=SimpleNamespace(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200,
+                cache_creation_input_tokens=300,
+            )
+        )
+        result = AnthropicAdapter().extract_usage(resp)
+        assert result.cache_creation_5m_tokens == 300
+        assert result.cache_creation_1h_tokens == 0
+        assert result.input_tokens == 1000 + 200 + 300
+
 
 @pytest.mark.unit
 class TestAnthropicAdapterNoneHandling:
@@ -246,9 +261,6 @@ class TestAnthropicAdapterNoneHandling:
 
 @pytest.mark.unit
 class TestAnthropicAdapterServiceTierScope:
-    def test_anthropic_adapter_has_no_service_tier_extractor(self) -> None:
-        """Affirms scope: only OpenAI captures service_tier.
-
-        Anthropic intentionally omits this method.
-        """
-        assert not hasattr(AnthropicAdapter(), "extract_service_tier")
+    def test_anthropic_adapter_returns_none_for_service_tier(self) -> None:
+        """Anthropic has no service-tier concept."""
+        assert AnthropicAdapter().extract_service_tier(SimpleNamespace()) is None

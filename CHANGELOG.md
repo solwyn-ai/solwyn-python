@@ -16,8 +16,9 @@
   collapsing them into a single bucket lost billing accuracy.
 - **Anthropic adapter** now reads cache writes from the structured
   `usage.cache_creation` sub-object (`.ephemeral_5m_input_tokens` and
-  `.ephemeral_1h_input_tokens`) instead of the aggregate
-  `cache_creation_input_tokens` field.
+  `.ephemeral_1h_input_tokens`). When a non-beta/older response only includes
+  the aggregate `cache_creation_input_tokens` field, the SDK attributes it to
+  the 5-minute cache bucket.
 
 ### Added
 - **OpenAI `service_tier`** is now extracted from API responses and forwarded on
@@ -26,6 +27,10 @@
   responses send `service_tier=None` (only OpenAI has the concept).
 
 ### Compatibility
-- Pre-launch release; no preexisting customer SDKs. Pairs with the API in
-  `core@feature/token-usage` (PR `solwyn-ai/core#71`) — recommend same-day deploy
-  of both PRs.
+- Pre-launch release; no preexisting customer SDKs.
+- **Deploy order matters.** SDK 0.2.0 events will be rejected with 422 by Solwyn
+  API versions older than `core#71`. Deploy the API first, then publish the SDK.
+  The reverse direction, old SDK 0.1.x against the new API, continues to work
+  because new fields are optional and old SDKs never send them.
+- The reporter swallows failed telemetry sends by design, so a mismatched deploy
+  produces succeeding LLM calls with missing telemetry.

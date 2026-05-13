@@ -100,6 +100,21 @@ class TestSyncStreamWrapperHappyPath:
 
         on_complete.assert_called_once()
 
+    def test_on_complete_exception_suppressed_on_direct_iteration(self) -> None:
+        from solwyn.stream import SyncStreamWrapper
+
+        def exploding_on_complete(token_details, elapsed_ms):
+            raise RuntimeError("callback boom")
+
+        wrapper = SyncStreamWrapper(
+            stream=[SimpleNamespace()],
+            accumulator=FakeAccumulator(),
+            on_complete=exploding_on_complete,
+            on_error=MagicMock(),
+        )
+
+        assert list(wrapper) == [SimpleNamespace()]
+
 
 @pytest.mark.unit
 class TestSyncStreamWrapperErrorPath:
@@ -129,6 +144,26 @@ class TestSyncStreamWrapperErrorPath:
         on_error.assert_called_once()
         assert isinstance(on_error.call_args[0][0], ConnectionError)
         on_complete.assert_not_called()
+
+    def test_on_error_exception_suppressed_and_stream_error_preserved(self) -> None:
+        from solwyn.stream import SyncStreamWrapper
+
+        def exploding_stream():
+            yield SimpleNamespace(content="ok")
+            raise ConnectionError("provider down")
+
+        def exploding_on_error(exc):
+            raise RuntimeError("callback boom")
+
+        wrapper = SyncStreamWrapper(
+            stream=exploding_stream(),
+            accumulator=FakeAccumulator(),
+            on_complete=MagicMock(),
+            on_error=exploding_on_error,
+        )
+
+        with pytest.raises(ConnectionError, match="provider down"):
+            list(wrapper)
 
 
 @pytest.mark.unit
@@ -335,6 +370,23 @@ class TestAsyncStreamWrapper:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
+    async def test_on_complete_exception_suppressed_on_direct_iteration(self) -> None:
+        from solwyn.stream import AsyncStreamWrapper
+
+        async def exploding_on_complete(token_details, elapsed_ms):
+            raise RuntimeError("async callback boom")
+
+        wrapper = AsyncStreamWrapper(
+            stream=_aiter([SimpleNamespace()]),
+            accumulator=FakeAccumulator(),
+            on_complete=exploding_on_complete,
+            on_error=AsyncMock(),
+        )
+
+        assert [c async for c in wrapper] == [SimpleNamespace()]
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_error_during_iteration(self) -> None:
         from solwyn.stream import AsyncStreamWrapper
 
@@ -357,6 +409,28 @@ class TestAsyncStreamWrapper:
 
         on_error.assert_called_once()
         on_complete.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_on_error_exception_suppressed_and_stream_error_preserved(self) -> None:
+        from solwyn.stream import AsyncStreamWrapper
+
+        async def exploding():
+            yield SimpleNamespace()
+            raise ConnectionError("boom")
+
+        async def exploding_on_error(exc):
+            raise RuntimeError("async callback boom")
+
+        wrapper = AsyncStreamWrapper(
+            stream=exploding(),
+            accumulator=FakeAccumulator(),
+            on_complete=AsyncMock(),
+            on_error=exploding_on_error,
+        )
+
+        with pytest.raises(ConnectionError, match="boom"):
+            _ = [c async for c in wrapper]
 
     @pytest.mark.unit
     @pytest.mark.asyncio

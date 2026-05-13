@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field
 # _types -> TokenDetails -> (if merged here) _types.
 from solwyn._token_details import TokenDetails
 
+SERVICE_TIER_MAX_LENGTH = 32
+
 # ── Enums ────────────────────────────────────────────────────────────────
 
 
@@ -76,8 +78,8 @@ class MetadataEvent(BaseModel):
     )
     service_tier: str | None = Field(
         default=None,
-        max_length=50,
-        description="OpenAI service_tier from response. None for Anthropic and Google.",
+        max_length=SERVICE_TIER_MAX_LENGTH,
+        description="Provider service tier from the response, when available.",
     )
     sdk_instance_id: str = Field(..., description="Unique SDK instance identifier")
     timestamp: datetime = Field(..., description="When the LLM call completed (UTC)")
