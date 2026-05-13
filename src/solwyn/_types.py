@@ -74,6 +74,11 @@ class MetadataEvent(BaseModel):
     is_model_fallback: bool = Field(
         ..., description="Whether this call used fallback_model after the primary failed"
     )
+    service_tier: str | None = Field(
+        default=None,
+        max_length=50,
+        description="OpenAI service_tier from response. None for Anthropic and Google.",
+    )
     sdk_instance_id: str = Field(..., description="Unique SDK instance identifier")
     timestamp: datetime = Field(..., description="When the LLM call completed (UTC)")
 

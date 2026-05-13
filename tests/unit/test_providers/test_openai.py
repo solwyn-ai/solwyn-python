@@ -268,3 +268,47 @@ class TestOpenAIAdapterExtractUsageNoneHandling:
         """When response has no usage attribute, return all-zero TokenDetails."""
         result = OpenAIAdapter().extract_usage(SimpleNamespace())
         assert result == TokenDetails()
+
+
+@pytest.mark.unit
+class TestOpenAIServiceTier:
+    """OpenAI-only service_tier extraction — forwarded verbatim to MetadataEvent."""
+
+    def test_openai_extract_service_tier_present(self) -> None:
+        resp = SimpleNamespace(
+            service_tier="priority",
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) == "priority"
+
+    def test_openai_extract_service_tier_flex(self) -> None:
+        resp = SimpleNamespace(
+            service_tier="flex",
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) == "flex"
+
+    def test_openai_extract_service_tier_batch(self) -> None:
+        resp = SimpleNamespace(
+            service_tier="batch",
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) == "batch"
+
+    def test_openai_extract_service_tier_default(self) -> None:
+        resp = SimpleNamespace(
+            service_tier="default",
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) == "default"
+
+    def test_openai_extract_service_tier_absent_returns_none(self) -> None:
+        resp = SimpleNamespace(usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5))
+        assert OpenAIAdapter().extract_service_tier(resp) is None
+
+    def test_openai_extract_service_tier_none_returns_none(self) -> None:
+        resp = SimpleNamespace(
+            service_tier=None,
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) is None

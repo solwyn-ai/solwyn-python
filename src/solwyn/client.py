@@ -327,6 +327,8 @@ class Solwyn(_SolwynBase):
                         token_details=token_details,
                     )
                     self._reporter.report_confirm(confirm)
+                extract_st = getattr(accumulator, "extract_service_tier", None)
+                service_tier: str | None = extract_st() if extract_st is not None else None
                 event = self._build_metadata_event(
                     model=ctx.model,
                     provider=selected_provider,
@@ -336,6 +338,7 @@ class Solwyn(_SolwynBase):
                     latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                     status=CallStatus.SUCCESS,
                     is_model_fallback=ctx.is_model_fallback,
+                    service_tier=service_tier,
                 )
                 self._reporter.report(event)
 
@@ -362,6 +365,8 @@ class Solwyn(_SolwynBase):
         if budget_result.reservation_id:
             self._budget.confirm_cost(budget_result.reservation_id, ctx.model, token_details)
 
+        extract_st = getattr(self._adapter, "extract_service_tier", None)
+        service_tier = extract_st(response) if extract_st is not None else None
         event = self._build_metadata_event(
             model=ctx.model,
             provider=selected_provider,
@@ -371,6 +376,7 @@ class Solwyn(_SolwynBase):
             latency_ms=elapsed_ms,
             status=CallStatus.SUCCESS,
             is_model_fallback=ctx.is_model_fallback,
+            service_tier=service_tier,
         )
         self._reporter.report(event)
 
@@ -628,6 +634,8 @@ class AsyncSolwyn(_SolwynBase):
                     await self._budget.confirm_cost(
                         budget_result.reservation_id, ctx.model, token_details
                     )
+                extract_st = getattr(accumulator, "extract_service_tier", None)
+                service_tier: str | None = extract_st() if extract_st is not None else None
                 event = self._build_metadata_event(
                     model=ctx.model,
                     provider=selected_provider,
@@ -637,6 +645,7 @@ class AsyncSolwyn(_SolwynBase):
                     latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                     status=CallStatus.SUCCESS,
                     is_model_fallback=ctx.is_model_fallback,
+                    service_tier=service_tier,
                 )
                 self._reporter.report(event)
 
@@ -662,6 +671,8 @@ class AsyncSolwyn(_SolwynBase):
         if budget_result.reservation_id:
             await self._budget.confirm_cost(budget_result.reservation_id, ctx.model, token_details)
 
+        extract_st = getattr(self._adapter, "extract_service_tier", None)
+        service_tier = extract_st(response) if extract_st is not None else None
         event = self._build_metadata_event(
             model=ctx.model,
             provider=selected_provider,
@@ -671,6 +682,7 @@ class AsyncSolwyn(_SolwynBase):
             latency_ms=elapsed_ms,
             status=CallStatus.SUCCESS,
             is_model_fallback=ctx.is_model_fallback,
+            service_tier=service_tier,
         )
         self._reporter.report(event)
 

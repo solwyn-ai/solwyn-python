@@ -242,3 +242,13 @@ class TestAnthropicAdapterNoneHandling:
         """When response has no usage attribute, return all-zero TokenDetails."""
         result = AnthropicAdapter().extract_usage(SimpleNamespace())
         assert result == TokenDetails()
+
+
+@pytest.mark.unit
+class TestAnthropicAdapterServiceTierScope:
+    def test_anthropic_adapter_has_no_service_tier_extractor(self) -> None:
+        """Affirms scope: only OpenAI captures service_tier.
+
+        Anthropic intentionally omits this method.
+        """
+        assert not hasattr(AnthropicAdapter(), "extract_service_tier")

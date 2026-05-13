@@ -98,6 +98,17 @@ class OpenAIAdapter:
         """Extract token usage from a Chat Completions or Responses API response."""
         return _extract_openai_usage(response)
 
+    def extract_service_tier(self, response: Any) -> str | None:
+        """Return service_tier from an OpenAI response, or None if absent.
+
+        OpenAI tiers (default/flex/priority/batch) price at different rates;
+        the API stores this on cost_events for future per-tier repricing.
+        """
+        tier = getattr(response, "service_tier", None)
+        if not isinstance(tier, str):
+            return None
+        return tier
+
     def prepare_streaming(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Inject stream_options so usage appears in the final chunk."""
         kwargs = dict(kwargs)
@@ -130,3 +141,12 @@ class OpenAIStreamAccumulator:
         if self._usage_chunk is None:
             return TokenDetails()
         return _extract_openai_usage(self._usage_chunk)
+
+    def extract_service_tier(self) -> str | None:
+        """Return service_tier from the saved final-chunk, or None if absent."""
+        if self._usage_chunk is None:
+            return None
+        tier = getattr(self._usage_chunk, "service_tier", None)
+        if not isinstance(tier, str):
+            return None
+        return tier

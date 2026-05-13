@@ -117,6 +117,48 @@ class TestOpenAIStreamAccumulator:
 
 
 @pytest.mark.unit
+class TestOpenAIStreamAccumulatorServiceTier:
+    """OpenAI streaming accumulator exposes service_tier from the final usage chunk."""
+
+    def test_openai_stream_accumulator_extracts_service_tier(self) -> None:
+        acc = OpenAIStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                service_tier="flex",
+                usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+                choices=[],
+            )
+        )
+        assert acc.extract_service_tier() == "flex"
+
+    def test_openai_stream_accumulator_service_tier_none_when_no_usage_chunk(self) -> None:
+        acc = OpenAIStreamAccumulator()
+        assert acc.extract_service_tier() is None
+
+    def test_openai_stream_accumulator_service_tier_absent_on_chunk(self) -> None:
+        """When final chunk has no service_tier attribute, returns None."""
+        acc = OpenAIStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                usage=SimpleNamespace(prompt_tokens=50, completion_tokens=20),
+                choices=[],
+            )
+        )
+        assert acc.extract_service_tier() is None
+
+    def test_openai_stream_accumulator_service_tier_priority(self) -> None:
+        acc = OpenAIStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                service_tier="priority",
+                usage=SimpleNamespace(prompt_tokens=200, completion_tokens=100),
+                choices=[],
+            )
+        )
+        assert acc.extract_service_tier() == "priority"
+
+
+@pytest.mark.unit
 class TestOpenAIPrepareStreaming:
     """OpenAI adapter injects stream_options for usage in streaming."""
 
