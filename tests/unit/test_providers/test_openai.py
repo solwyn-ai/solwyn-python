@@ -202,6 +202,26 @@ class TestOpenAIAdapterExtractUsageChatCompletions:
         assert result.tool_use_input_tokens == 0
 
 
+def _responses_api_response_full() -> Any:
+    """Responses-API fixture with all 8 token sub-fields populated."""
+    return SimpleNamespace(
+        usage=SimpleNamespace(
+            input_tokens=1000,
+            output_tokens=500,
+            input_tokens_details=SimpleNamespace(
+                cached_tokens=200,
+                audio_tokens=50,
+            ),
+            output_tokens_details=SimpleNamespace(
+                reasoning_tokens=300,
+                audio_tokens=20,
+                accepted_prediction_tokens=10,
+                rejected_prediction_tokens=5,
+            ),
+        )
+    )
+
+
 @pytest.mark.unit
 class TestOpenAIAdapterExtractUsageResponsesAPI:
     """Responses API uses input_tokens / output_tokens naming."""
@@ -221,6 +241,19 @@ class TestOpenAIAdapterExtractUsageResponsesAPI:
         response = _responses_api_response(output_tokens=500, reasoning_tokens=150)
         result = OpenAIAdapter().extract_usage(response)
         assert result.reasoning_tokens == 150
+
+    def test_responses_api_extracts_audio_and_prediction_tokens(self) -> None:
+        """All 8 token sub-fields surface from Responses API — parity with Chat Completions."""
+        resp = _responses_api_response_full()
+        details = OpenAIAdapter().extract_usage(resp)
+        assert details.input_tokens == 1000
+        assert details.output_tokens == 500
+        assert details.cached_input_tokens == 200
+        assert details.audio_input_tokens == 50
+        assert details.reasoning_tokens == 300
+        assert details.audio_output_tokens == 20
+        assert details.accepted_prediction_tokens == 10
+        assert details.rejected_prediction_tokens == 5
 
 
 @pytest.mark.unit

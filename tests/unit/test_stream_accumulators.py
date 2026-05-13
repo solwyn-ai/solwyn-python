@@ -90,6 +90,31 @@ class TestOpenAIStreamAccumulator:
         assert result.cached_input_tokens == 50
         assert result.reasoning_tokens == 15
 
+    def test_responses_api_stream_extracts_full_breakdown(self) -> None:
+        """Streaming Responses API surfaces all 8 token sub-fields, same as non-streaming."""
+        acc = OpenAIStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                usage=SimpleNamespace(
+                    input_tokens=1000,
+                    output_tokens=500,
+                    input_tokens_details=SimpleNamespace(cached_tokens=200, audio_tokens=50),
+                    output_tokens_details=SimpleNamespace(
+                        reasoning_tokens=300,
+                        audio_tokens=20,
+                        accepted_prediction_tokens=10,
+                        rejected_prediction_tokens=5,
+                    ),
+                ),
+                choices=[],
+            )
+        )
+        result = acc.finalize()
+        assert result.audio_input_tokens == 50
+        assert result.audio_output_tokens == 20
+        assert result.accepted_prediction_tokens == 10
+        assert result.rejected_prediction_tokens == 5
+
 
 @pytest.mark.unit
 class TestOpenAIPrepareStreaming:

@@ -56,7 +56,14 @@ def _extract_chat_completions(usage: Any) -> TokenDetails:
 
 
 def _extract_responses_api(usage: Any) -> TokenDetails:
-    """Extract from Responses API usage object."""
+    """Extract from Responses API usage object.
+
+    Mirrors _extract_chat_completions field-for-field — the Responses API
+    exposes the same sub-objects under different names (input_tokens_details
+    instead of prompt_tokens_details, output_tokens_details instead of
+    completion_tokens_details). All 8 token categories that Chat Completions
+    surfaces are surfaced here too.
+    """
     input_details = getattr(usage, "input_tokens_details", None)
     output_details = getattr(usage, "output_tokens_details", None)
 
@@ -64,7 +71,11 @@ def _extract_responses_api(usage: Any) -> TokenDetails:
         input_tokens=getattr(usage, "input_tokens", 0) or 0,
         output_tokens=getattr(usage, "output_tokens", 0) or 0,
         cached_input_tokens=getattr(input_details, "cached_tokens", 0) or 0,
+        audio_input_tokens=getattr(input_details, "audio_tokens", 0) or 0,
         reasoning_tokens=getattr(output_details, "reasoning_tokens", 0) or 0,
+        audio_output_tokens=getattr(output_details, "audio_tokens", 0) or 0,
+        accepted_prediction_tokens=getattr(output_details, "accepted_prediction_tokens", 0) or 0,
+        rejected_prediction_tokens=getattr(output_details, "rejected_prediction_tokens", 0) or 0,
     )
 
 
