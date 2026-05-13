@@ -127,13 +127,14 @@ class TestAnthropicAdapterExtractUsage:
         result = AnthropicAdapter().extract_usage(response)
         assert result.cached_input_tokens == 400
 
-    def test_cache_creation_mapped_to_cache_creation_tokens(self) -> None:
+    def test_cache_creation_mapped_to_cache_creation_5m_tokens(self) -> None:
         response = _anthropic_response(
             input_tokens=1000,
             cache_creation_input_tokens=250,
         )
         result = AnthropicAdapter().extract_usage(response)
-        assert result.cache_creation_tokens == 250
+        assert result.cache_creation_5m_tokens == 250
+        assert result.cache_creation_1h_tokens == 0
 
     def test_reasoning_tokens_always_zero(self) -> None:
         """Anthropic folds thinking tokens into output_tokens — documented blind spot."""
@@ -153,7 +154,8 @@ class TestAnthropicAdapterExtractUsage:
         assert result.input_tokens == 1500  # 1000 + 400 + 100
         assert result.output_tokens == 500
         assert result.cached_input_tokens == 400
-        assert result.cache_creation_tokens == 100
+        assert result.cache_creation_5m_tokens == 100
+        assert result.cache_creation_1h_tokens == 0
 
     def test_missing_cache_fields_graceful(self) -> None:
         """Older Anthropic responses without cache fields return zeros for those."""
@@ -166,7 +168,8 @@ class TestAnthropicAdapterExtractUsage:
         assert result.input_tokens == 500
         assert result.output_tokens == 200
         assert result.cached_input_tokens == 0
-        assert result.cache_creation_tokens == 0
+        assert result.cache_creation_5m_tokens == 0
+        assert result.cache_creation_1h_tokens == 0
 
     def test_returns_token_details_instance(self) -> None:
         response = _anthropic_response(input_tokens=10, output_tokens=5)

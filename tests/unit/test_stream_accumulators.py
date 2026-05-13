@@ -190,7 +190,8 @@ class TestAnthropicStreamAccumulator:
         # Normalized: base + cache_read + cache_creation
         assert result.input_tokens == 800 + 300 + 100
         assert result.cached_input_tokens == 300
-        assert result.cache_creation_tokens == 100
+        assert result.cache_creation_5m_tokens == 100
+        assert result.cache_creation_1h_tokens == 0
         assert result.output_tokens == 200
 
     def test_returns_zeros_on_empty_stream(self) -> None:

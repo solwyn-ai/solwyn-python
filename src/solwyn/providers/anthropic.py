@@ -46,7 +46,10 @@ class AnthropicAdapter:
         Normalization:
         - input_tokens = base + cache_read + cache_creation (all additive)
         - cached_input_tokens = cache_read_input_tokens
-        - cache_creation_tokens = cache_creation_input_tokens
+        - cache_creation_5m_tokens = cache_creation_input_tokens (interim: maps aggregate
+          to 5m bucket; will split per-bucket once the structured cache_creation
+          object is consumed)
+        - cache_creation_1h_tokens = 0 (interim; populated once per-bucket extraction lands)
         - reasoning_tokens = 0 (folded into output_tokens by Anthropic)
         """
         usage = getattr(response, "usage", None)
@@ -62,7 +65,8 @@ class AnthropicAdapter:
             input_tokens=base_input + cache_read + cache_creation,
             output_tokens=output,
             cached_input_tokens=cache_read,
-            cache_creation_tokens=cache_creation,
+            cache_creation_5m_tokens=cache_creation,
+            cache_creation_1h_tokens=0,
             # reasoning_tokens intentionally 0 — Anthropic doesn't report separately
         )
 
@@ -108,5 +112,6 @@ class AnthropicStreamAccumulator:
             input_tokens=self._base_input + self._cache_read + self._cache_creation,
             output_tokens=self._output,
             cached_input_tokens=self._cache_read,
-            cache_creation_tokens=self._cache_creation,
+            cache_creation_5m_tokens=self._cache_creation,
+            cache_creation_1h_tokens=0,
         )

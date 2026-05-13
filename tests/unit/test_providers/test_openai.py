@@ -188,11 +188,12 @@ class TestOpenAIAdapterExtractUsageChatCompletions:
         result = OpenAIAdapter().extract_usage(response)
         assert isinstance(result, TokenDetails)
 
-    def test_cache_creation_tokens_always_zero(self) -> None:
-        """OpenAI doesn't have cache creation tokens — field stays 0."""
+    def test_cache_creation_split_tokens_always_zero(self) -> None:
+        """OpenAI doesn't have cache creation tokens — both 5m/1h fields stay 0."""
         response = _chat_response(prompt_tokens=100, cached_tokens=50)
         result = OpenAIAdapter().extract_usage(response)
-        assert result.cache_creation_tokens == 0
+        assert result.cache_creation_5m_tokens == 0
+        assert result.cache_creation_1h_tokens == 0
 
     def test_tool_use_input_tokens_always_zero(self) -> None:
         """OpenAI doesn't report tool_use_input_tokens — field stays 0."""

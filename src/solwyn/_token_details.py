@@ -21,8 +21,11 @@ class TokenDetails(BaseModel):
     cached_input_tokens: int = Field(
         default=0, ge=0, description="Input tokens served from prompt cache"
     )
-    cache_creation_tokens: int = Field(
-        default=0, ge=0, description="Input tokens written to prompt cache (Anthropic)"
+    cache_creation_5m_tokens: int = Field(
+        default=0, ge=0, description="Anthropic ephemeral_5m_input_tokens (cache write, 5m TTL)"
+    )
+    cache_creation_1h_tokens: int = Field(
+        default=0, ge=0, description="Anthropic ephemeral_1h_input_tokens (cache write, 1h TTL)"
     )
     reasoning_tokens: int = Field(
         default=0, ge=0, description="Tokens used for chain-of-thought / thinking"
