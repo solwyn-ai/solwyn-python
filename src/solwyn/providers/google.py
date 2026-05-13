@@ -43,11 +43,11 @@ def _extract_google_usage(usage_metadata: Any) -> TokenDetails:
     if usage_metadata is None:
         return TokenDetails()
 
-    input_tokens = getattr(usage_metadata, "prompt_token_count", 0) or 0
-    candidates = getattr(usage_metadata, "candidates_token_count", 0) or 0
-    thoughts = getattr(usage_metadata, "thoughts_token_count", 0) or 0
-    cached = getattr(usage_metadata, "cached_content_token_count", 0) or 0
-    tool_use = getattr(usage_metadata, "tool_use_prompt_token_count", 0) or 0
+    input_tokens = getattr(usage_metadata, "prompt_token_count", None) or 0
+    candidates = getattr(usage_metadata, "candidates_token_count", None) or 0
+    thoughts = getattr(usage_metadata, "thoughts_token_count", None) or 0
+    cached = getattr(usage_metadata, "cached_content_token_count", None) or 0
+    tool_use = getattr(usage_metadata, "tool_use_prompt_token_count", None) or 0
 
     return TokenDetails(
         input_tokens=input_tokens,
