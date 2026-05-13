@@ -2,17 +2,20 @@
 
 Anthropic usage normalization:
 
-    input_tokens (normalized) = base_input + cache_read + cache_creation
+    input_tokens (normalized) = base_input + cache_read + cache_5m + cache_1h
 
-Anthropic reports cache_read_input_tokens and cache_creation_input_tokens as
-SEPARATE additive fields, not subsets of input_tokens. Our normalized
-input_tokens is the sum of all three.
+Anthropic reports cache_read_input_tokens as a separate additive field (not a
+subset of input_tokens). Cache writes are broken out by TTL tier in the
+usage.cache_creation sub-object:
+
+    usage.cache_creation.ephemeral_5m_input_tokens  — 5-minute TTL (1.25× rate)
+    usage.cache_creation.ephemeral_1h_input_tokens  — 1-hour TTL  (2×    rate)
+
+The cache_creation sub-object is absent when no cache write occurred or on
+older API responses — both 5m and 1h default to 0 via getattr guards.
 
 reasoning_tokens stays 0 — Anthropic folds extended thinking tokens into
 output_tokens and does not report them separately (documented blind spot).
-
-Cache fields may be absent on older API responses — all missing fields default
-to 0 via getattr guards.
 """
 
 from __future__ import annotations
@@ -44,13 +47,14 @@ class AnthropicAdapter:
         Never raises — returns zeros for any unexpected response shape.
 
         Normalization:
-        - input_tokens = base + cache_read + cache_creation (all additive)
+        - input_tokens = base + cache_read + (5m + 1h cache writes)  (all additive)
         - cached_input_tokens = cache_read_input_tokens
-        - cache_creation_5m_tokens = cache_creation_input_tokens (interim: maps aggregate
-          to 5m bucket; will split per-bucket once the structured cache_creation
-          object is consumed)
-        - cache_creation_1h_tokens = 0 (interim; populated once per-bucket extraction lands)
+        - cache_creation_5m_tokens = usage.cache_creation.ephemeral_5m_input_tokens
+        - cache_creation_1h_tokens = usage.cache_creation.ephemeral_1h_input_tokens
         - reasoning_tokens = 0 (folded into output_tokens by Anthropic)
+
+        The cache_creation sub-object is absent on responses where no cache write
+        occurred; both 5m and 1h default to 0 via getattr guards.
         """
         usage = getattr(response, "usage", None)
         if usage is None:
@@ -59,15 +63,17 @@ class AnthropicAdapter:
         base_input = getattr(usage, "input_tokens", 0) or 0
         output = getattr(usage, "output_tokens", 0) or 0
         cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
-        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+
+        cache_creation_detail = getattr(usage, "cache_creation", None)
+        cache_5m = getattr(cache_creation_detail, "ephemeral_5m_input_tokens", 0) or 0
+        cache_1h = getattr(cache_creation_detail, "ephemeral_1h_input_tokens", 0) or 0
 
         return TokenDetails(
-            input_tokens=base_input + cache_read + cache_creation,
+            input_tokens=base_input + cache_read + cache_5m + cache_1h,
             output_tokens=output,
             cached_input_tokens=cache_read,
-            cache_creation_5m_tokens=cache_creation,
-            cache_creation_1h_tokens=0,
-            # reasoning_tokens intentionally 0 — Anthropic doesn't report separately
+            cache_creation_5m_tokens=cache_5m,
+            cache_creation_1h_tokens=cache_1h,
         )
 
     def prepare_streaming(self, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -89,7 +95,8 @@ class AnthropicStreamAccumulator:
     def __init__(self) -> None:
         self._base_input: int = 0
         self._cache_read: int = 0
-        self._cache_creation: int = 0
+        self._cache_5m: int = 0
+        self._cache_1h: int = 0
         self._output: int = 0
 
     def observe(self, chunk: Any) -> None:
@@ -100,7 +107,9 @@ class AnthropicStreamAccumulator:
             if usage is not None:
                 self._base_input = getattr(usage, "input_tokens", 0) or 0
                 self._cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
-                self._cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+                detail = getattr(usage, "cache_creation", None)
+                self._cache_5m = getattr(detail, "ephemeral_5m_input_tokens", 0) or 0
+                self._cache_1h = getattr(detail, "ephemeral_1h_input_tokens", 0) or 0
 
         elif event_type == "message_delta":
             usage = getattr(chunk, "usage", None)
@@ -109,9 +118,9 @@ class AnthropicStreamAccumulator:
 
     def finalize(self) -> TokenDetails:
         return TokenDetails(
-            input_tokens=self._base_input + self._cache_read + self._cache_creation,
+            input_tokens=self._base_input + self._cache_read + self._cache_5m + self._cache_1h,
             output_tokens=self._output,
             cached_input_tokens=self._cache_read,
-            cache_creation_5m_tokens=self._cache_creation,
-            cache_creation_1h_tokens=0,
+            cache_creation_5m_tokens=self._cache_5m,
+            cache_creation_1h_tokens=self._cache_1h,
         )

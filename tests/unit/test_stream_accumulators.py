@@ -161,7 +161,6 @@ class TestAnthropicStreamAccumulator:
                     usage=SimpleNamespace(
                         input_tokens=150,
                         cache_read_input_tokens=0,
-                        cache_creation_input_tokens=0,
                     )
                 ),
             )
@@ -198,7 +197,10 @@ class TestAnthropicStreamAccumulator:
                     usage=SimpleNamespace(
                         input_tokens=800,
                         cache_read_input_tokens=300,
-                        cache_creation_input_tokens=100,
+                        cache_creation=SimpleNamespace(
+                            ephemeral_5m_input_tokens=100,
+                            ephemeral_1h_input_tokens=0,
+                        ),
                     )
                 ),
             )
@@ -212,7 +214,7 @@ class TestAnthropicStreamAccumulator:
         )
 
         result = acc.finalize()
-        # Normalized: base + cache_read + cache_creation
+        # Normalized: base + cache_read + cache_5m + cache_1h
         assert result.input_tokens == 800 + 300 + 100
         assert result.cached_input_tokens == 300
         assert result.cache_creation_5m_tokens == 100

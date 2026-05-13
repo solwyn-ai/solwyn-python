@@ -1,8 +1,10 @@
 """Tests for Anthropic provider adapter — token extraction only, no pricing.
 
-Key subtlety: Anthropic's input_tokens, cache_read_input_tokens, and
-cache_creation_input_tokens are SEPARATE additive fields, not subsets.
-Our normalized input_tokens is the sum of all three.
+Key subtlety: Anthropic's input_tokens and cache_read_input_tokens are separate
+additive fields (base does not include cache). Cache writes are broken out by
+TTL tier via usage.cache_creation.ephemeral_5m_input_tokens and
+usage.cache_creation.ephemeral_1h_input_tokens. Normalized input_tokens is the
+sum of all four components.
 """
 
 from __future__ import annotations
@@ -25,21 +27,27 @@ def _anthropic_response(
     input_tokens: int = 0,
     output_tokens: int = 0,
     cache_read_input_tokens: int = 0,
-    cache_creation_input_tokens: int = 0,
+    cache_5m: int = 0,
+    cache_1h: int = 0,
     include_cache_fields: bool = True,
 ) -> Any:
     """Build a fake Anthropic messages.create() response.
 
-    By default includes cache fields (even as 0). Set include_cache_fields=False
-    to simulate older responses that have no cache fields at all.
+    By default includes cache_read and (when nonzero) cache_creation sub-object.
+    Set include_cache_fields=False to simulate older responses with no cache info at all.
     """
     if include_cache_fields:
-        usage = SimpleNamespace(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cache_read_input_tokens=cache_read_input_tokens,
-            cache_creation_input_tokens=cache_creation_input_tokens,
-        )
+        kwargs: dict[str, object] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_read_input_tokens": cache_read_input_tokens,
+        }
+        if cache_5m or cache_1h:
+            kwargs["cache_creation"] = SimpleNamespace(
+                ephemeral_5m_input_tokens=cache_5m,
+                ephemeral_1h_input_tokens=cache_1h,
+            )
+        usage = SimpleNamespace(**kwargs)
     else:
         usage = SimpleNamespace(
             input_tokens=input_tokens,
@@ -103,15 +111,16 @@ class TestAnthropicAdapterExtractUsage:
         result = AnthropicAdapter().extract_usage(response)
         assert result.output_tokens == 500
 
-    def test_input_tokens_normalized_to_sum_of_all_three(self) -> None:
-        """input_tokens = base + cache_read + cache_creation (all additive)."""
+    def test_input_tokens_normalized_to_sum_of_components(self) -> None:
+        """input_tokens = base + cache_read + cache_5m + cache_1h (all additive)."""
         response = _anthropic_response(
             input_tokens=1000,
             cache_read_input_tokens=300,
-            cache_creation_input_tokens=200,
+            cache_5m=150,
+            cache_1h=50,
         )
         result = AnthropicAdapter().extract_usage(response)
-        assert result.input_tokens == 1500  # 1000 + 300 + 200
+        assert result.input_tokens == 1500  # 1000 + 300 + 150 + 50
 
     def test_base_input_only_no_cache(self) -> None:
         """With no cache, input_tokens == base."""
@@ -130,7 +139,7 @@ class TestAnthropicAdapterExtractUsage:
     def test_cache_creation_mapped_to_cache_creation_5m_tokens(self) -> None:
         response = _anthropic_response(
             input_tokens=1000,
-            cache_creation_input_tokens=250,
+            cache_5m=250,
         )
         result = AnthropicAdapter().extract_usage(response)
         assert result.cache_creation_5m_tokens == 250
@@ -143,12 +152,12 @@ class TestAnthropicAdapterExtractUsage:
         assert result.reasoning_tokens == 0
 
     def test_full_cache_response(self) -> None:
-        """All cache fields present: normalized input = sum of all three."""
+        """All cache fields present: normalized input = sum of all components."""
         response = _anthropic_response(
             input_tokens=1000,
             output_tokens=500,
             cache_read_input_tokens=400,
-            cache_creation_input_tokens=100,
+            cache_5m=100,
         )
         result = AnthropicAdapter().extract_usage(response)
         assert result.input_tokens == 1500  # 1000 + 400 + 100
@@ -195,6 +204,30 @@ class TestAnthropicAdapterExtractUsage:
         response = _anthropic_response(input_tokens=100, output_tokens=50)
         result = AnthropicAdapter().extract_usage(response)
         assert result.tool_use_input_tokens == 0
+
+    def test_extracts_ephemeral_5m_and_1h_cache_writes(self) -> None:
+        """5m and 1h cache writes come from usage.cache_creation sub-object.
+
+        Priced separately by the API (1.25× and 2× base input rate).
+        """
+        resp = SimpleNamespace(
+            usage=SimpleNamespace(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200,
+                cache_creation=SimpleNamespace(
+                    ephemeral_5m_input_tokens=200,
+                    ephemeral_1h_input_tokens=100,
+                ),
+            )
+        )
+        result = AnthropicAdapter().extract_usage(resp)
+        assert result.cache_creation_5m_tokens == 200
+        assert result.cache_creation_1h_tokens == 100
+        # Normalized: base + cache_read + (5m + 1h)
+        assert result.input_tokens == 1000 + 200 + 200 + 100
+        assert result.output_tokens == 500
+        assert result.cached_input_tokens == 200
 
 
 @pytest.mark.unit

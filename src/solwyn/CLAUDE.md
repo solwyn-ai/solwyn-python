@@ -17,7 +17,7 @@
 
 ## Provider Adapter Notes
 
-- **Anthropic**: `input_tokens` = base + `cache_read_input_tokens` + `cache_creation_input_tokens` (additive, base does NOT include cache)
+- **Anthropic**: `input_tokens` = base + `cache_read_input_tokens` + `cache_creation.ephemeral_5m_input_tokens` + `cache_creation.ephemeral_1h_input_tokens` (additive, base does NOT include cache)
 - **OpenAI**: Two response shapes — Chat Completions (`prompt_tokens`/`completion_tokens`) vs Responses API (`input_tokens`/`output_tokens`). Detect via `hasattr(usage, 'prompt_tokens')`
 - **Google**: `output_tokens` = `candidates_token_count` + `thoughts_token_count`. Usage on `response.usage_metadata` not `response.usage`
 

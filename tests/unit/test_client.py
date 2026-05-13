@@ -468,7 +468,6 @@ class TestRichTokenExtraction:
             input_tokens=800,
             output_tokens=200,
             cache_read_input_tokens=300,
-            cache_creation_input_tokens=0,
         )
         client.messages.create.return_value = mock_response
         solwyn = _make_solwyn(client)
@@ -736,7 +735,6 @@ class TestSyncStreamingInterception:
                     usage=SimpleNamespace(
                         input_tokens=150,
                         cache_read_input_tokens=50,
-                        cache_creation_input_tokens=0,
                     )
                 ),
             ),
@@ -917,7 +915,6 @@ class TestAsyncStreamingInterception:
                     usage=SimpleNamespace(
                         input_tokens=150,
                         cache_read_input_tokens=0,
-                        cache_creation_input_tokens=0,
                     )
                 ),
             )

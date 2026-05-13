@@ -27,7 +27,6 @@ def _mock_anthropic_client():
             input_tokens=100,
             output_tokens=50,
             cache_read_input_tokens=0,
-            cache_creation_input_tokens=0,
         ),
     )
     return client
@@ -249,7 +248,6 @@ class TestAsyncAnthropicMessagesProxy:
                     input_tokens=100,
                     output_tokens=50,
                     cache_read_input_tokens=0,
-                    cache_creation_input_tokens=0,
                 ),
             )
         )
