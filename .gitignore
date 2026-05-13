@@ -39,5 +39,7 @@ src/solwyn/_version.py
 # Claude Code local state
 .claude/
 
+todos/
+
 # Git worktrees
-.worktrees/
+.worktrees
