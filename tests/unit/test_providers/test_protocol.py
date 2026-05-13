@@ -29,7 +29,7 @@ class _NoOpAccumulator:
     def finalize(self) -> TokenDetails:
         return TokenDetails()
 
-    def extract_service_tier(self) -> str | None:
+    def get_service_tier(self) -> str | None:
         return None
 
 
@@ -124,10 +124,12 @@ class TestProviderAdapterProtocol:
         adapter = _StubAdapter()
         acc = adapter.create_stream_accumulator()
         assert isinstance(acc, _NoOpAccumulator)
+        assert isinstance(acc, StreamUsageAccumulator)
         # Verify accumulator satisfies the observe/finalize interface
         acc.observe(object())
         result = acc.finalize()
         assert isinstance(result, TokenDetails)
+        assert acc.get_service_tier() is None
 
 
 # ---------------------------------------------------------------------------

@@ -14,8 +14,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from solwyn._constants import SERVICE_TIER_MAX_LENGTH
 from solwyn._token_details import TokenDetails
-from solwyn._types import SERVICE_TIER_MAX_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ class OpenAIStreamAccumulator:
             return TokenDetails()
         return _extract_openai_usage(self._usage_chunk)
 
-    def extract_service_tier(self) -> str | None:
+    def get_service_tier(self) -> str | None:
         """Return service_tier from the saved final-chunk, or None if absent."""
         if self._usage_chunk is None:
             return None

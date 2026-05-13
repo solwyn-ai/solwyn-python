@@ -327,7 +327,7 @@ class Solwyn(_SolwynBase):
                         token_details=token_details,
                     )
                     self._reporter.report_confirm(confirm)
-                service_tier = accumulator.extract_service_tier()
+                service_tier = accumulator.get_service_tier()
                 event = self._build_metadata_event(
                     model=ctx.model,
                     provider=selected_provider,
@@ -632,7 +632,7 @@ class AsyncSolwyn(_SolwynBase):
                     await self._budget.confirm_cost(
                         budget_result.reservation_id, ctx.model, token_details
                     )
-                service_tier = accumulator.extract_service_tier()
+                service_tier = accumulator.get_service_tier()
                 event = self._build_metadata_event(
                     model=ctx.model,
                     provider=selected_provider,

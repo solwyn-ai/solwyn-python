@@ -7,8 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from conftest import VALID_API_KEY
+from pydantic import ValidationError
 
-from solwyn._types import MetadataEvent, ProviderName
+from solwyn._types import SERVICE_TIER_MAX_LENGTH, MetadataEvent, ProviderName
 from solwyn.reporter import (
     AsyncMetadataReporter,
     MetadataReporter,
@@ -179,6 +180,43 @@ class TestMetadataReporter:
             reporter._thread.join(timeout=2.0)
             reporter.report(_make_event())
         # After context exit, reporter should be closed
+
+    def test_send_batch_omits_none_fields_from_payload(self) -> None:
+        with patch("solwyn.reporter.MetadataReporter._flush_loop"):
+            reporter = MetadataReporter(
+                "https://api.test.solwyn.ai",
+                VALID_API_KEY,
+            )
+            reporter._shutdown.set()
+            reporter._thread.join(timeout=2.0)
+
+            with patch.object(reporter._http, "post") as mock_post:
+                reporter._send_batch([_make_event(service_tier=None)])
+
+            payload = mock_post.call_args.kwargs["json"][0]
+            assert "service_tier" not in payload
+            assert "token_details" not in payload
+            reporter._http.close()
+
+    def test_send_batch_includes_service_tier_when_present(self) -> None:
+        with patch("solwyn.reporter.MetadataReporter._flush_loop"):
+            reporter = MetadataReporter(
+                "https://api.test.solwyn.ai",
+                VALID_API_KEY,
+            )
+            reporter._shutdown.set()
+            reporter._thread.join(timeout=2.0)
+
+            with patch.object(reporter._http, "post") as mock_post:
+                reporter._send_batch([_make_event(service_tier="priority")])
+
+            payload = mock_post.call_args.kwargs["json"][0]
+            assert payload["service_tier"] == "priority"
+            reporter._http.close()
+
+    def test_metadata_event_rejects_overlength_service_tier(self) -> None:
+        with pytest.raises(ValidationError):
+            _make_event(service_tier="x" * (SERVICE_TIER_MAX_LENGTH + 1))
 
 
 # ---------------------------------------------------------------------------

@@ -14,9 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # TokenDetails lives in a separate module to avoid a circular import:
 # _types -> TokenDetails -> (if merged here) _types.
+from solwyn._constants import SERVICE_TIER_MAX_LENGTH
 from solwyn._token_details import TokenDetails
-
-SERVICE_TIER_MAX_LENGTH = 32
 
 # ── Enums ────────────────────────────────────────────────────────────────
 

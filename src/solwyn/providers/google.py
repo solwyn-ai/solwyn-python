@@ -111,6 +111,6 @@ class GoogleStreamAccumulator:
     def finalize(self) -> TokenDetails:
         return _extract_google_usage(self._last_usage_metadata)
 
-    def extract_service_tier(self) -> str | None:
+    def get_service_tier(self) -> str | None:
         """Google streams do not expose a service tier."""
         return None

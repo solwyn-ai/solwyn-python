@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from solwyn._token_details import TokenDetails
+from solwyn.providers._accumulator import StreamUsageAccumulator
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -26,6 +27,13 @@ class FakeAccumulator:
 
     def finalize(self) -> TokenDetails:
         return self._result
+
+    def get_service_tier(self) -> str | None:
+        return None
+
+
+def test_fake_accumulator_satisfies_stream_usage_accumulator_protocol() -> None:
+    assert isinstance(FakeAccumulator(), StreamUsageAccumulator)
 
 
 # ---------------------------------------------------------------------------

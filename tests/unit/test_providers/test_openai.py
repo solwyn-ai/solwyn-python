@@ -294,6 +294,13 @@ class TestOpenAIServiceTier:
         )
         assert OpenAIAdapter().extract_service_tier(resp) is None
 
+    def test_openai_extract_service_tier_non_string_returns_none(self) -> None:
+        resp = SimpleNamespace(
+            service_tier=42,
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) is None
+
     def test_openai_extract_service_tier_truncates_to_event_limit(self) -> None:
         from solwyn._types import SERVICE_TIER_MAX_LENGTH
 

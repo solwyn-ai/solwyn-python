@@ -29,6 +29,18 @@ from solwyn._token_details import TokenDetails
 logger = logging.getLogger(__name__)
 
 
+def _parse_anthropic_cache(usage: object) -> tuple[int, int]:
+    """Return (5m cache-write tokens, 1h cache-write tokens) from Anthropic usage."""
+    detail = getattr(usage, "cache_creation", None)
+    if detail is not None:
+        cache_5m = getattr(detail, "ephemeral_5m_input_tokens", None) or 0
+        cache_1h = getattr(detail, "ephemeral_1h_input_tokens", None) or 0
+    else:
+        cache_5m = getattr(usage, "cache_creation_input_tokens", None) or 0
+        cache_1h = 0
+    return cache_5m, cache_1h
+
+
 class AnthropicAdapter:
     """Extracts normalized TokenDetails from Anthropic API responses."""
 
@@ -68,14 +80,7 @@ class AnthropicAdapter:
         base_input = getattr(usage, "input_tokens", None) or 0
         output = getattr(usage, "output_tokens", None) or 0
         cache_read = getattr(usage, "cache_read_input_tokens", None) or 0
-
-        cache_creation_detail = getattr(usage, "cache_creation", None)
-        if cache_creation_detail is not None:
-            cache_5m = getattr(cache_creation_detail, "ephemeral_5m_input_tokens", None) or 0
-            cache_1h = getattr(cache_creation_detail, "ephemeral_1h_input_tokens", None) or 0
-        else:
-            cache_5m = getattr(usage, "cache_creation_input_tokens", None) or 0
-            cache_1h = 0
+        cache_5m, cache_1h = _parse_anthropic_cache(usage)
 
         return TokenDetails(
             input_tokens=base_input + cache_read + cache_5m + cache_1h,
@@ -123,13 +128,7 @@ class AnthropicStreamAccumulator:
             if usage is not None:
                 self._base_input = getattr(usage, "input_tokens", None) or 0
                 self._cache_read = getattr(usage, "cache_read_input_tokens", None) or 0
-                detail = getattr(usage, "cache_creation", None)
-                if detail is not None:
-                    self._cache_5m = getattr(detail, "ephemeral_5m_input_tokens", None) or 0
-                    self._cache_1h = getattr(detail, "ephemeral_1h_input_tokens", None) or 0
-                else:
-                    self._cache_5m = getattr(usage, "cache_creation_input_tokens", None) or 0
-                    self._cache_1h = 0
+                self._cache_5m, self._cache_1h = _parse_anthropic_cache(usage)
 
         elif event_type == "message_delta":
             self._saw_message_delta = True
@@ -157,6 +156,6 @@ class AnthropicStreamAccumulator:
             cache_creation_1h_tokens=self._cache_1h,
         )
 
-    def extract_service_tier(self) -> str | None:
+    def get_service_tier(self) -> str | None:
         """Anthropic streams do not expose a service tier."""
         return None

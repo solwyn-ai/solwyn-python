@@ -31,6 +31,6 @@ class StreamUsageAccumulator(Protocol):
         """
         ...
 
-    def extract_service_tier(self) -> str | None:
+    def get_service_tier(self) -> str | None:
         """Return provider service tier observed in the stream, or None when unavailable."""
         ...

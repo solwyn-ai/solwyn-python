@@ -244,6 +244,27 @@ class TestAnthropicAdapterExtractUsage:
         assert result.cache_creation_1h_tokens == 0
         assert result.input_tokens == 1000 + 200 + 300
 
+    def test_cache_creation_present_with_zero_values_ignores_aggregate_fallback(self) -> None:
+        resp = SimpleNamespace(
+            usage=SimpleNamespace(
+                input_tokens=100,
+                output_tokens=50,
+                cache_read_input_tokens=0,
+                cache_creation=SimpleNamespace(
+                    ephemeral_5m_input_tokens=0,
+                    ephemeral_1h_input_tokens=0,
+                ),
+                cache_creation_input_tokens=999,
+            )
+        )
+
+        result = AnthropicAdapter().extract_usage(resp)
+
+        assert result.cache_creation_5m_tokens == 0
+        assert result.cache_creation_1h_tokens == 0
+        assert result.input_tokens == 100
+        assert result.output_tokens == 50
+
 
 @pytest.mark.unit
 class TestAnthropicAdapterNoneHandling:
