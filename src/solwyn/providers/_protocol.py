@@ -44,6 +44,10 @@ class ProviderAdapter(Protocol):
         """
         ...
 
+    def extract_service_tier(self, response: Any) -> str | None:
+        """Extract provider service tier from a response, or None when unavailable."""
+        ...
+
     def prepare_streaming(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Prepare call kwargs for streaming if needed.
 

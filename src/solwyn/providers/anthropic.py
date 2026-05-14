@@ -2,24 +2,43 @@
 
 Anthropic usage normalization:
 
-    input_tokens (normalized) = base_input + cache_read + cache_creation
+    input_tokens (normalized) = base_input + cache_read + cache_5m + cache_1h
 
-Anthropic reports cache_read_input_tokens and cache_creation_input_tokens as
-SEPARATE additive fields, not subsets of input_tokens. Our normalized
-input_tokens is the sum of all three.
+Anthropic reports cache_read_input_tokens as a separate additive field (not a
+subset of input_tokens). Cache writes are broken out by TTL tier in the
+usage.cache_creation sub-object:
+
+    usage.cache_creation.ephemeral_5m_input_tokens  — 5-minute TTL (1.25× rate)
+    usage.cache_creation.ephemeral_1h_input_tokens  — 1-hour TTL  (2×    rate)
+
+When the cache_creation sub-object is absent but cache_creation_input_tokens is
+present, the aggregate is attributed to the 5m bucket because that is
+Anthropic's default prompt-cache TTL.
 
 reasoning_tokens stays 0 — Anthropic folds extended thinking tokens into
 output_tokens and does not report them separately (documented blind spot).
-
-Cache fields may be absent on older API responses — all missing fields default
-to 0 via getattr guards.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from solwyn._token_details import TokenDetails
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_anthropic_cache(usage: object) -> tuple[int, int]:
+    """Return (5m cache-write tokens, 1h cache-write tokens) from Anthropic usage."""
+    detail = getattr(usage, "cache_creation", None)
+    if detail is not None:
+        cache_5m = getattr(detail, "ephemeral_5m_input_tokens", None) or 0
+        cache_1h = getattr(detail, "ephemeral_1h_input_tokens", None) or 0
+    else:
+        cache_5m = getattr(usage, "cache_creation_input_tokens", None) or 0
+        cache_1h = 0
+    return cache_5m, cache_1h
 
 
 class AnthropicAdapter:
@@ -44,27 +63,36 @@ class AnthropicAdapter:
         Never raises — returns zeros for any unexpected response shape.
 
         Normalization:
-        - input_tokens = base + cache_read + cache_creation (all additive)
+        - input_tokens = base + cache_read + (5m + 1h cache writes)  (all additive)
         - cached_input_tokens = cache_read_input_tokens
-        - cache_creation_tokens = cache_creation_input_tokens
+        - cache_creation_5m_tokens = usage.cache_creation.ephemeral_5m_input_tokens,
+          or aggregate cache_creation_input_tokens when only the aggregate exists
+        - cache_creation_1h_tokens = usage.cache_creation.ephemeral_1h_input_tokens
         - reasoning_tokens = 0 (folded into output_tokens by Anthropic)
+
+        The cache_creation sub-object is absent on non-beta/older response shapes.
+        Those responses can still carry cache_creation_input_tokens as an aggregate.
         """
         usage = getattr(response, "usage", None)
         if usage is None:
             return TokenDetails()
 
-        base_input = getattr(usage, "input_tokens", 0) or 0
-        output = getattr(usage, "output_tokens", 0) or 0
-        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
-        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        base_input = getattr(usage, "input_tokens", None) or 0
+        output = getattr(usage, "output_tokens", None) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", None) or 0
+        cache_5m, cache_1h = _parse_anthropic_cache(usage)
 
         return TokenDetails(
-            input_tokens=base_input + cache_read + cache_creation,
+            input_tokens=base_input + cache_read + cache_5m + cache_1h,
             output_tokens=output,
             cached_input_tokens=cache_read,
-            cache_creation_tokens=cache_creation,
-            # reasoning_tokens intentionally 0 — Anthropic doesn't report separately
+            cache_creation_5m_tokens=cache_5m,
+            cache_creation_1h_tokens=cache_1h,
         )
+
+    def extract_service_tier(self, response: Any) -> str | None:
+        """Anthropic responses do not expose a service tier."""
+        return None
 
     def prepare_streaming(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Anthropic streams include usage events by default — no changes needed."""
@@ -85,28 +113,49 @@ class AnthropicStreamAccumulator:
     def __init__(self) -> None:
         self._base_input: int = 0
         self._cache_read: int = 0
-        self._cache_creation: int = 0
+        self._cache_5m: int = 0
+        self._cache_1h: int = 0
         self._output: int = 0
+        self._saw_message_start = False
+        self._saw_message_delta = False
 
     def observe(self, chunk: Any) -> None:
         event_type = getattr(chunk, "type", None)
 
         if event_type == "message_start":
+            self._saw_message_start = True
             usage = getattr(getattr(chunk, "message", None), "usage", None)
             if usage is not None:
-                self._base_input = getattr(usage, "input_tokens", 0) or 0
-                self._cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
-                self._cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+                self._base_input = getattr(usage, "input_tokens", None) or 0
+                self._cache_read = getattr(usage, "cache_read_input_tokens", None) or 0
+                self._cache_5m, self._cache_1h = _parse_anthropic_cache(usage)
 
         elif event_type == "message_delta":
+            self._saw_message_delta = True
             usage = getattr(chunk, "usage", None)
             if usage is not None:
-                self._output = getattr(usage, "output_tokens", 0) or 0
+                self._output = getattr(usage, "output_tokens", None) or 0
 
     def finalize(self) -> TokenDetails:
+        if self._output > 0 and not self._saw_message_start:
+            logger.warning(
+                "Anthropic stream finalized without message_start; "
+                "input token counts may be incomplete"
+            )
+        input_total = self._base_input + self._cache_read + self._cache_5m + self._cache_1h
+        if input_total > 0 and not self._saw_message_delta:
+            logger.warning(
+                "Anthropic stream finalized without message_delta; "
+                "output token counts may be incomplete"
+            )
         return TokenDetails(
-            input_tokens=self._base_input + self._cache_read + self._cache_creation,
+            input_tokens=input_total,
             output_tokens=self._output,
             cached_input_tokens=self._cache_read,
-            cache_creation_tokens=self._cache_creation,
+            cache_creation_5m_tokens=self._cache_5m,
+            cache_creation_1h_tokens=self._cache_1h,
         )
+
+    def get_service_tier(self) -> str | None:
+        """Anthropic streams do not expose a service tier."""
+        return None

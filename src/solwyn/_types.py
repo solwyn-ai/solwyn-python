@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # TokenDetails lives in a separate module to avoid a circular import:
 # _types -> TokenDetails -> (if merged here) _types.
+from solwyn._constants import SERVICE_TIER_MAX_LENGTH
 from solwyn._token_details import TokenDetails
 
 # ── Enums ────────────────────────────────────────────────────────────────
@@ -73,6 +74,11 @@ class MetadataEvent(BaseModel):
     status: CallStatus = Field(..., description="Call outcome")
     is_model_fallback: bool = Field(
         ..., description="Whether this call used fallback_model after the primary failed"
+    )
+    service_tier: str | None = Field(
+        default=None,
+        max_length=SERVICE_TIER_MAX_LENGTH,
+        description="Provider service tier from the response, when available.",
     )
     sdk_instance_id: str = Field(..., description="Unique SDK instance identifier")
     timestamp: datetime = Field(..., description="When the LLM call completed (UTC)")

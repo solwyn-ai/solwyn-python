@@ -176,7 +176,7 @@ class MetadataReporter(_ReporterBase):
         with self._in_flight_lock:
             self._in_flight += 1
         try:
-            payload = [e.model_dump(mode="json") for e in batch]
+            payload = [e.model_dump(mode="json", exclude_none=True) for e in batch]
             self._http.post(
                 f"{self.api_url}/api/v1/metadata/ingest",
                 json=payload,
@@ -289,7 +289,7 @@ class AsyncMetadataReporter(_ReporterBase):
         """Send a batch of events to the cloud API."""
         self._in_flight += 1
         try:
-            payload = [e.model_dump(mode="json") for e in batch]
+            payload = [e.model_dump(mode="json", exclude_none=True) for e in batch]
             await self._http.post(
                 f"{self.api_url}/api/v1/metadata/ingest",
                 json=payload,

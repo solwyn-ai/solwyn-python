@@ -29,6 +29,9 @@ class _NoOpAccumulator:
     def finalize(self) -> TokenDetails:
         return TokenDetails()
 
+    def get_service_tier(self) -> str | None:
+        return None
+
 
 class _StubAdapter:
     """Minimal concrete adapter that satisfies the ProviderAdapter protocol."""
@@ -46,6 +49,9 @@ class _StubAdapter:
     def extract_usage(self, response: Any) -> TokenDetails:
         return TokenDetails()
 
+    def extract_service_tier(self, response: Any) -> str | None:
+        return None
+
     def prepare_streaming(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         return dict(kwargs)
 
@@ -61,7 +67,7 @@ class _IncompleteAdapter:
         return "incomplete"
 
     # Missing: detect_client, detect_model, extract_usage,
-    # prepare_streaming, create_stream_accumulator
+    # extract_service_tier, prepare_streaming, create_stream_accumulator
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +111,10 @@ class TestProviderAdapterProtocol:
         result = adapter.extract_usage(object())
         assert isinstance(result, TokenDetails)
 
+    def test_extract_service_tier_returns_none(self) -> None:
+        adapter = _StubAdapter()
+        assert adapter.extract_service_tier(object()) is None
+
     def test_prepare_streaming_returns_dict(self) -> None:
         adapter = _StubAdapter()
         result = adapter.prepare_streaming({"stream": True})
@@ -114,10 +124,12 @@ class TestProviderAdapterProtocol:
         adapter = _StubAdapter()
         acc = adapter.create_stream_accumulator()
         assert isinstance(acc, _NoOpAccumulator)
+        assert isinstance(acc, StreamUsageAccumulator)
         # Verify accumulator satisfies the observe/finalize interface
         acc.observe(object())
         result = acc.finalize()
         assert isinstance(result, TokenDetails)
+        assert acc.get_service_tier() is None
 
 
 # ---------------------------------------------------------------------------

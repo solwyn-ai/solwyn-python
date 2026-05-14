@@ -90,6 +90,76 @@ class TestOpenAIStreamAccumulator:
         assert result.cached_input_tokens == 50
         assert result.reasoning_tokens == 15
 
+    def test_responses_api_stream_extracts_full_breakdown(self) -> None:
+        """Streaming Responses API surfaces all 8 token sub-fields, same as non-streaming."""
+        acc = OpenAIStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                usage=SimpleNamespace(
+                    input_tokens=1000,
+                    output_tokens=500,
+                    input_tokens_details=SimpleNamespace(cached_tokens=200, audio_tokens=50),
+                    output_tokens_details=SimpleNamespace(
+                        reasoning_tokens=300,
+                        audio_tokens=20,
+                        accepted_prediction_tokens=10,
+                        rejected_prediction_tokens=5,
+                    ),
+                ),
+                choices=[],
+            )
+        )
+        result = acc.finalize()
+        assert result.audio_input_tokens == 50
+        assert result.audio_output_tokens == 20
+        assert result.accepted_prediction_tokens == 10
+        assert result.rejected_prediction_tokens == 5
+
+
+@pytest.mark.unit
+class TestOpenAIStreamAccumulatorServiceTier:
+    """OpenAI streaming accumulator exposes service_tier from the final usage chunk."""
+
+    @pytest.mark.parametrize("tier", ["flex", "priority"])
+    def test_openai_stream_accumulator_extracts_service_tier(self, tier: str) -> None:
+        acc = OpenAIStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                service_tier=tier,
+                usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+                choices=[],
+            )
+        )
+        assert acc.get_service_tier() == tier
+
+    def test_openai_stream_accumulator_service_tier_none_when_no_usage_chunk(self) -> None:
+        acc = OpenAIStreamAccumulator()
+        assert acc.get_service_tier() is None
+
+    def test_openai_stream_accumulator_service_tier_absent_on_chunk(self) -> None:
+        """When final chunk has no service_tier attribute, returns None."""
+        acc = OpenAIStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                usage=SimpleNamespace(prompt_tokens=50, completion_tokens=20),
+                choices=[],
+            )
+        )
+        assert acc.get_service_tier() is None
+
+    def test_openai_stream_accumulator_truncates_service_tier(self) -> None:
+        from solwyn._types import SERVICE_TIER_MAX_LENGTH
+
+        acc = OpenAIStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                service_tier="x" * (SERVICE_TIER_MAX_LENGTH + 1),
+                usage=SimpleNamespace(prompt_tokens=200, completion_tokens=100),
+                choices=[],
+            )
+        )
+        assert acc.get_service_tier() == "x" * SERVICE_TIER_MAX_LENGTH
+
 
 @pytest.mark.unit
 class TestOpenAIPrepareStreaming:
@@ -136,7 +206,6 @@ class TestAnthropicStreamAccumulator:
                     usage=SimpleNamespace(
                         input_tokens=150,
                         cache_read_input_tokens=0,
-                        cache_creation_input_tokens=0,
                     )
                 ),
             )
@@ -173,7 +242,10 @@ class TestAnthropicStreamAccumulator:
                     usage=SimpleNamespace(
                         input_tokens=800,
                         cache_read_input_tokens=300,
-                        cache_creation_input_tokens=100,
+                        cache_creation=SimpleNamespace(
+                            ephemeral_5m_input_tokens=100,
+                            ephemeral_1h_input_tokens=0,
+                        ),
                     )
                 ),
             )
@@ -187,11 +259,134 @@ class TestAnthropicStreamAccumulator:
         )
 
         result = acc.finalize()
-        # Normalized: base + cache_read + cache_creation
+        # Normalized: base + cache_read + cache_5m + cache_1h
         assert result.input_tokens == 800 + 300 + 100
         assert result.cached_input_tokens == 300
-        assert result.cache_creation_tokens == 100
+        assert result.cache_creation_5m_tokens == 100
+        assert result.cache_creation_1h_tokens == 0
         assert result.output_tokens == 200
+
+    def test_stream_input_tokens_normalized_with_both_5m_and_1h_nonzero(self) -> None:
+        acc = AnthropicStreamAccumulator()
+
+        acc.observe(
+            SimpleNamespace(
+                type="message_start",
+                message=SimpleNamespace(
+                    usage=SimpleNamespace(
+                        input_tokens=1000,
+                        cache_read_input_tokens=200,
+                        cache_creation=SimpleNamespace(
+                            ephemeral_5m_input_tokens=300,
+                            ephemeral_1h_input_tokens=150,
+                        ),
+                    )
+                ),
+            )
+        )
+        acc.observe(
+            SimpleNamespace(
+                type="message_delta",
+                usage=SimpleNamespace(output_tokens=500),
+            )
+        )
+
+        result = acc.finalize()
+        assert result.cache_creation_5m_tokens == 300
+        assert result.cache_creation_1h_tokens == 150
+        assert result.cached_input_tokens == 200
+        assert result.input_tokens == 1000 + 200 + 300 + 150
+        assert result.output_tokens == 500
+
+    def test_cache_creation_present_with_zero_values_ignores_aggregate_fallback(self) -> None:
+        acc = AnthropicStreamAccumulator()
+
+        acc.observe(
+            SimpleNamespace(
+                type="message_start",
+                message=SimpleNamespace(
+                    usage=SimpleNamespace(
+                        input_tokens=100,
+                        output_tokens=0,
+                        cache_read_input_tokens=0,
+                        cache_creation=SimpleNamespace(
+                            ephemeral_5m_input_tokens=0,
+                            ephemeral_1h_input_tokens=0,
+                        ),
+                        cache_creation_input_tokens=999,
+                    )
+                ),
+            )
+        )
+        acc.observe(
+            SimpleNamespace(
+                type="message_delta",
+                usage=SimpleNamespace(output_tokens=50),
+            )
+        )
+
+        result = acc.finalize()
+        assert result.cache_creation_5m_tokens == 0
+        assert result.cache_creation_1h_tokens == 0
+        assert result.input_tokens == 100
+        assert result.output_tokens == 50
+
+    def test_aggregate_only_cache_creation_falls_back_to_5m_bucket(self) -> None:
+        acc = AnthropicStreamAccumulator()
+
+        acc.observe(
+            SimpleNamespace(
+                type="message_start",
+                message=SimpleNamespace(
+                    usage=SimpleNamespace(
+                        input_tokens=1000,
+                        cache_read_input_tokens=200,
+                        cache_creation_input_tokens=300,
+                    )
+                ),
+            )
+        )
+        acc.observe(
+            SimpleNamespace(
+                type="message_delta",
+                usage=SimpleNamespace(output_tokens=500),
+            )
+        )
+
+        result = acc.finalize()
+        assert result.cache_creation_5m_tokens == 300
+        assert result.cache_creation_1h_tokens == 0
+        assert result.input_tokens == 1000 + 200 + 300
+
+    def test_missing_message_start_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        acc = AnthropicStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                type="message_delta",
+                usage=SimpleNamespace(output_tokens=83),
+            )
+        )
+
+        result = acc.finalize()
+
+        assert result.input_tokens == 0
+        assert result.output_tokens == 83
+        assert "without message_start" in caplog.text
+
+    def test_missing_message_delta_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        acc = AnthropicStreamAccumulator()
+        acc.observe(
+            SimpleNamespace(
+                type="message_start",
+                message=SimpleNamespace(usage=SimpleNamespace(input_tokens=150)),
+            )
+        )
+
+        result = acc.finalize()
+
+        assert result.input_tokens == 150
+        assert result.output_tokens == 0
+        assert "without message_delta" in caplog.text
 
     def test_returns_zeros_on_empty_stream(self) -> None:
         acc = AnthropicStreamAccumulator()

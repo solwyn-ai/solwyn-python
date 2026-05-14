@@ -64,6 +64,11 @@ def _make_solwyn(client, **overrides):
     return solwyn
 
 
+def _allow_budget_result() -> SimpleNamespace:
+    """Minimal budget-check result for tests that bypass HTTP."""
+    return SimpleNamespace(allowed=True, reservation_id=None)
+
+
 # ---------------------------------------------------------------------------
 # Provider auto-detection
 # ---------------------------------------------------------------------------
@@ -468,7 +473,10 @@ class TestRichTokenExtraction:
             input_tokens=800,
             output_tokens=200,
             cache_read_input_tokens=300,
-            cache_creation_input_tokens=0,
+            cache_creation=SimpleNamespace(
+                ephemeral_5m_input_tokens=50,
+                ephemeral_1h_input_tokens=25,
+            ),
         )
         client.messages.create.return_value = mock_response
         solwyn = _make_solwyn(client)
@@ -488,10 +496,52 @@ class TestRichTokenExtraction:
 
         event = reported_events[0]
         assert event.token_details is not None
-        # Anthropic: input_tokens is normalized sum of base + cache_read + cache_creation
-        assert event.token_details.input_tokens == 800 + 300 + 0
+        # Anthropic: input_tokens is normalized sum of base + cache_read + cache writes
+        assert event.token_details.input_tokens == 800 + 300 + 50 + 25
         assert event.token_details.cached_input_tokens == 300
+        assert event.token_details.cache_creation_5m_tokens == 50
+        assert event.token_details.cache_creation_1h_tokens == 25
         assert event.token_details.output_tokens == 200
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+    def test_openai_non_streaming_service_tier_in_event(self) -> None:
+        """OpenAI service_tier reaches MetadataEvent on sync non-streaming calls."""
+        client, mock_response = _mock_openai_client()
+        mock_response.service_tier = "priority"
+        solwyn = _make_solwyn(client)
+
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_result()):
+            solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+
+        assert reported_events[0].service_tier == "priority"
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+    def test_anthropic_non_streaming_service_tier_none_in_event(self) -> None:
+        """Providers without a service tier report None behaviorally through the client."""
+        client, _ = _mock_anthropic_client()
+        solwyn = _make_solwyn(client)
+
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_result()):
+            solwyn.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=1024,
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+
+        assert reported_events[0].service_tier is None
 
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
@@ -595,6 +645,43 @@ class TestSyncStreamingInterception:
         # Chunks passed through unchanged
         assert len(chunks) == 2
         assert chunks[0].choices[0].delta.content == "Hi"
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+    def test_streaming_openai_service_tier_in_event(self) -> None:
+        """OpenAI service_tier reaches MetadataEvent on sync streaming calls."""
+        client, _ = _mock_openai_client()
+        client.chat.completions.create.return_value = [
+            SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="Hi"))],
+            ),
+            SimpleNamespace(
+                service_tier="flex",
+                usage=SimpleNamespace(
+                    prompt_tokens=100,
+                    completion_tokens=50,
+                    prompt_tokens_details=None,
+                    completion_tokens_details=None,
+                ),
+                choices=[],
+            ),
+        ]
+
+        solwyn = _make_solwyn(client)
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_result()):
+            stream = solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+            )
+            list(stream)
+
+        assert reported_events[0].service_tier == "flex"
 
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
@@ -736,7 +823,6 @@ class TestSyncStreamingInterception:
                     usage=SimpleNamespace(
                         input_tokens=150,
                         cache_read_input_tokens=50,
-                        cache_creation_input_tokens=0,
                     )
                 ),
             ),
@@ -861,6 +947,51 @@ class TestAsyncStreamingInterception:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
+    async def test_async_streaming_openai_service_tier_in_event(self) -> None:
+        """OpenAI service_tier reaches MetadataEvent on async streaming calls."""
+        client, _ = _mock_openai_client()
+
+        async def async_stream():
+            yield SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="Hi"))],
+            )
+            yield SimpleNamespace(
+                service_tier="flex",
+                usage=SimpleNamespace(
+                    prompt_tokens=100,
+                    completion_tokens=50,
+                    prompt_tokens_details=None,
+                    completion_tokens_details=None,
+                ),
+                choices=[],
+            )
+
+        client.chat.completions.create = AsyncMockFn(return_value=async_stream())
+
+        solwyn = _make_async_solwyn(client)
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with patch.object(
+            solwyn._budget,
+            "check_budget",
+            new=AsyncMockFn(return_value=_allow_budget_result()),
+        ):
+            stream = await solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+            )
+            _ = [c async for c in stream]
+
+        assert reported_events[0].service_tier == "flex"
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_google_generate_content_stream(self) -> None:
         """Async Google models.generate_content_stream() wraps and reports."""
         client = MagicMock()
@@ -917,7 +1048,6 @@ class TestAsyncStreamingInterception:
                     usage=SimpleNamespace(
                         input_tokens=150,
                         cache_read_input_tokens=0,
-                        cache_creation_input_tokens=0,
                     )
                 ),
             )
@@ -996,6 +1126,33 @@ class TestAsyncNonStreamingInterception:
         mock_confirm.assert_called_once()
         # Metadata event reported
         assert len(reported_events) == 1
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_async_openai_non_streaming_service_tier_in_event(self) -> None:
+        """OpenAI service_tier reaches MetadataEvent on async non-streaming calls."""
+        client, mock_response = _mock_openai_client()
+        mock_response.service_tier = "batch"
+        client.chat.completions.create = AsyncMockFn(return_value=mock_response)
+
+        solwyn = _make_async_solwyn(client)
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with patch.object(
+            solwyn._budget,
+            "check_budget",
+            new=AsyncMockFn(return_value=_allow_budget_result()),
+        ):
+            await solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+
+        assert reported_events[0].service_tier == "batch"
 
         await solwyn._budget._http.aclose()
         await solwyn._reporter._http.aclose()

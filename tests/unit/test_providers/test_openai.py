@@ -58,15 +58,27 @@ def _responses_api_response(
     input_tokens: int = 0,
     output_tokens: int = 0,
     cached_tokens: int = 0,
+    audio_input_tokens: int = 0,
     reasoning_tokens: int = 0,
+    audio_output_tokens: int = 0,
+    accepted_prediction_tokens: int = 0,
+    rejected_prediction_tokens: int = 0,
 ) -> Any:
-    """Build a fake Responses API response (input_tokens naming)."""
+    """Build a fake Responses API response with all token sub-fields."""
     return SimpleNamespace(
         usage=SimpleNamespace(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            input_tokens_details=SimpleNamespace(cached_tokens=cached_tokens),
-            output_tokens_details=SimpleNamespace(reasoning_tokens=reasoning_tokens),
+            input_tokens_details=SimpleNamespace(
+                cached_tokens=cached_tokens,
+                audio_tokens=audio_input_tokens,
+            ),
+            output_tokens_details=SimpleNamespace(
+                reasoning_tokens=reasoning_tokens,
+                audio_tokens=audio_output_tokens,
+                accepted_prediction_tokens=accepted_prediction_tokens,
+                rejected_prediction_tokens=rejected_prediction_tokens,
+            ),
         )
     )
 
@@ -188,11 +200,12 @@ class TestOpenAIAdapterExtractUsageChatCompletions:
         result = OpenAIAdapter().extract_usage(response)
         assert isinstance(result, TokenDetails)
 
-    def test_cache_creation_tokens_always_zero(self) -> None:
-        """OpenAI doesn't have cache creation tokens — field stays 0."""
+    def test_cache_creation_split_tokens_always_zero(self) -> None:
+        """OpenAI doesn't have cache creation tokens — both 5m/1h fields stay 0."""
         response = _chat_response(prompt_tokens=100, cached_tokens=50)
         result = OpenAIAdapter().extract_usage(response)
-        assert result.cache_creation_tokens == 0
+        assert result.cache_creation_5m_tokens == 0
+        assert result.cache_creation_1h_tokens == 0
 
     def test_tool_use_input_tokens_always_zero(self) -> None:
         """OpenAI doesn't report tool_use_input_tokens — field stays 0."""
@@ -221,6 +234,28 @@ class TestOpenAIAdapterExtractUsageResponsesAPI:
         result = OpenAIAdapter().extract_usage(response)
         assert result.reasoning_tokens == 150
 
+    def test_responses_api_extracts_audio_and_prediction_tokens(self) -> None:
+        """All 8 token sub-fields surface from Responses API — parity with Chat Completions."""
+        resp = _responses_api_response(
+            input_tokens=1000,
+            output_tokens=500,
+            cached_tokens=200,
+            audio_input_tokens=50,
+            reasoning_tokens=300,
+            audio_output_tokens=20,
+            accepted_prediction_tokens=10,
+            rejected_prediction_tokens=5,
+        )
+        details = OpenAIAdapter().extract_usage(resp)
+        assert details.input_tokens == 1000
+        assert details.output_tokens == 500
+        assert details.cached_input_tokens == 200
+        assert details.audio_input_tokens == 50
+        assert details.reasoning_tokens == 300
+        assert details.audio_output_tokens == 20
+        assert details.accepted_prediction_tokens == 10
+        assert details.rejected_prediction_tokens == 5
+
 
 @pytest.mark.unit
 class TestOpenAIAdapterExtractUsageNoneHandling:
@@ -234,3 +269,44 @@ class TestOpenAIAdapterExtractUsageNoneHandling:
         """When response has no usage attribute, return all-zero TokenDetails."""
         result = OpenAIAdapter().extract_usage(SimpleNamespace())
         assert result == TokenDetails()
+
+
+@pytest.mark.unit
+class TestOpenAIServiceTier:
+    """OpenAI-only service_tier extraction."""
+
+    @pytest.mark.parametrize("tier", ["priority", "flex", "batch", "default"])
+    def test_openai_extract_service_tier_known_values(self, tier: str) -> None:
+        resp = SimpleNamespace(
+            service_tier=tier,
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) == tier
+
+    def test_openai_extract_service_tier_absent_returns_none(self) -> None:
+        resp = SimpleNamespace(usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5))
+        assert OpenAIAdapter().extract_service_tier(resp) is None
+
+    def test_openai_extract_service_tier_none_returns_none(self) -> None:
+        resp = SimpleNamespace(
+            service_tier=None,
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) is None
+
+    def test_openai_extract_service_tier_non_string_returns_none(self) -> None:
+        resp = SimpleNamespace(
+            service_tier=42,
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) is None
+
+    def test_openai_extract_service_tier_truncates_to_event_limit(self) -> None:
+        from solwyn._types import SERVICE_TIER_MAX_LENGTH
+
+        tier = "x" * (SERVICE_TIER_MAX_LENGTH + 1)
+        resp = SimpleNamespace(
+            service_tier=tier,
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        assert OpenAIAdapter().extract_service_tier(resp) == "x" * SERVICE_TIER_MAX_LENGTH

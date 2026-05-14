@@ -43,11 +43,11 @@ def _extract_google_usage(usage_metadata: Any) -> TokenDetails:
     if usage_metadata is None:
         return TokenDetails()
 
-    input_tokens = getattr(usage_metadata, "prompt_token_count", 0) or 0
-    candidates = getattr(usage_metadata, "candidates_token_count", 0) or 0
-    thoughts = getattr(usage_metadata, "thoughts_token_count", 0) or 0
-    cached = getattr(usage_metadata, "cached_content_token_count", 0) or 0
-    tool_use = getattr(usage_metadata, "tool_use_prompt_token_count", 0) or 0
+    input_tokens = getattr(usage_metadata, "prompt_token_count", None) or 0
+    candidates = getattr(usage_metadata, "candidates_token_count", None) or 0
+    thoughts = getattr(usage_metadata, "thoughts_token_count", None) or 0
+    cached = getattr(usage_metadata, "cached_content_token_count", None) or 0
+    tool_use = getattr(usage_metadata, "tool_use_prompt_token_count", None) or 0
 
     return TokenDetails(
         input_tokens=input_tokens,
@@ -79,6 +79,10 @@ class GoogleAdapter:
         usage_metadata = getattr(response, "usage_metadata", None)
         return _extract_google_usage(usage_metadata)
 
+    def extract_service_tier(self, response: Any) -> str | None:
+        """Google responses do not expose a service tier."""
+        return None
+
     def prepare_streaming(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Google streams include usage_metadata by default — no changes needed."""
         return dict(kwargs)
@@ -106,3 +110,7 @@ class GoogleStreamAccumulator:
 
     def finalize(self) -> TokenDetails:
         return _extract_google_usage(self._last_usage_metadata)
+
+    def get_service_tier(self) -> str | None:
+        """Google streams do not expose a service tier."""
+        return None

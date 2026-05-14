@@ -73,6 +73,7 @@ class _SolwynBase:
         latency_ms: float,
         status: CallStatus,
         is_model_fallback: bool,
+        service_tier: str | None = None,
         sdk_instance_id: str | None = None,
         timestamp: datetime | None = None,
     ) -> MetadataEvent:
@@ -86,6 +87,7 @@ class _SolwynBase:
             latency_ms=latency_ms,
             status=status,
             is_model_fallback=is_model_fallback,
+            service_tier=service_tier,
             sdk_instance_id=sdk_instance_id or self._sdk_instance_id,
             timestamp=timestamp or datetime.now(UTC),
         )

@@ -59,7 +59,12 @@ class SyncStreamWrapper:
             self._settled = True
         elapsed_ms = (time.monotonic() - self._start_time) * 1000
         token_details = self._accumulator.finalize()
-        self._on_complete(token_details, elapsed_ms)
+        try:
+            self._on_complete(token_details, elapsed_ms)
+        except Exception:
+            logger.warning(
+                "on_complete raised during stream settlement; suppressing", exc_info=True
+            )
 
     def _settle_error(self, exc: Exception) -> None:
         """Fire on_error exactly once. Mirrors _settle() for the error path."""
@@ -67,7 +72,10 @@ class SyncStreamWrapper:
             if self._settled:
                 return
             self._settled = True
-        self._on_error(exc)
+        try:
+            self._on_error(exc)
+        except Exception:
+            logger.warning("on_error raised during stream settlement; suppressing", exc_info=True)
 
     def __iter__(self) -> Iterator[Any]:
         try:
@@ -148,14 +156,26 @@ class AsyncStreamWrapper:
         self._settled = True
         elapsed_ms = (time.monotonic() - self._start_time) * 1000
         token_details = self._accumulator.finalize()
-        await self._on_complete(token_details, elapsed_ms)
+        try:
+            await self._on_complete(token_details, elapsed_ms)
+        except Exception:
+            logger.warning(
+                "on_complete raised during async stream settlement; suppressing",
+                exc_info=True,
+            )
 
     async def _settle_error(self, exc: Exception) -> None:
         """Fire on_error exactly once. Mirrors _settle() for the error path."""
         if self._settled:
             return
         self._settled = True
-        await self._on_error(exc)
+        try:
+            await self._on_error(exc)
+        except Exception:
+            logger.warning(
+                "on_error raised during async stream settlement; suppressing",
+                exc_info=True,
+            )
 
     async def __aiter__(self) -> AsyncIterator[Any]:
         try:

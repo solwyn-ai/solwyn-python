@@ -215,11 +215,12 @@ class TestGoogleAdapterExtractUsage:
         assert result.audio_input_tokens == 0
         assert result.audio_output_tokens == 0
 
-    def test_cache_creation_tokens_always_zero(self) -> None:
-        """Google doesn't have a cache creation token concept."""
+    def test_cache_creation_split_tokens_always_zero(self) -> None:
+        """Google doesn't have a cache creation token concept — both 5m/1h fields stay 0."""
         response = _google_response(prompt_token_count=100, candidates_token_count=50)
         result = GoogleAdapter().extract_usage(response)
-        assert result.cache_creation_tokens == 0
+        assert result.cache_creation_5m_tokens == 0
+        assert result.cache_creation_1h_tokens == 0
 
     def test_prediction_tokens_always_zero(self) -> None:
         """Google doesn't have predicted output token fields."""

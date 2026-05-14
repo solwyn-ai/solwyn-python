@@ -128,6 +128,37 @@ class TestAsyncReporterSendBatch:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
+    async def test_send_batch_omits_none_fields_from_payload(self) -> None:
+        reporter = AsyncMetadataReporter(
+            "https://api.test.solwyn.ai",
+            VALID_API_KEY,
+        )
+
+        with patch.object(reporter._http, "post", new_callable=AsyncMock) as mock_post:
+            await reporter._send_batch([_make_event(service_tier=None)])
+
+        payload = mock_post.call_args.kwargs["json"][0]
+        assert "service_tier" not in payload
+        assert "token_details" not in payload
+        await reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_send_batch_includes_service_tier_when_present(self) -> None:
+        reporter = AsyncMetadataReporter(
+            "https://api.test.solwyn.ai",
+            VALID_API_KEY,
+        )
+
+        with patch.object(reporter._http, "post", new_callable=AsyncMock) as mock_post:
+            await reporter._send_batch([_make_event(service_tier="priority")])
+
+        payload = mock_post.call_args.kwargs["json"][0]
+        assert payload["service_tier"] == "priority"
+        await reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_send_batch_swallows_errors(self) -> None:
         reporter = AsyncMetadataReporter(
             "https://api.test.solwyn.ai",
