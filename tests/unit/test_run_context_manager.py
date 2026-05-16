@@ -81,6 +81,10 @@ class TestRunContextManagerSync:
         with pytest.raises(ValueError, match="non-empty"), solwyn.run(""):
             pass
 
+    def test_whitespace_only_name_rejected(self) -> None:
+        with pytest.raises(ValueError, match="non-empty"), solwyn.run("   "):
+            pass
+
     def test_name_max_length_enforced(self) -> None:
         # Wire field cap is 255; reject longer names eagerly so callers
         # find out at scope entry rather than via wire validation later.

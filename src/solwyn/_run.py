@@ -20,8 +20,7 @@ from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from contextvars import ContextVar, Token
 from types import TracebackType
 
-# Wire cap on agent_run_name (mirrors MetadataEvent.agent_run_name max_length).
-_NAME_MAX_LENGTH = 255
+from solwyn._constants import AGENT_RUN_NAME_MAX_LENGTH
 
 # Single contextvar holding either None or an immutable (id, name) tuple.
 # Storing both together makes the swap atomic — no async task can ever
@@ -59,11 +58,11 @@ class _RunScope(AbstractContextManager[str], AbstractAsyncContextManager[str]):
     """
 
     def __init__(self, name: str) -> None:
-        if not name:
+        if not name.strip():
             raise ValueError("solwyn.run(name) requires a non-empty name")
-        if len(name) > _NAME_MAX_LENGTH:
+        if len(name) > AGENT_RUN_NAME_MAX_LENGTH:
             raise ValueError(
-                f"solwyn.run(name) exceeds max length {_NAME_MAX_LENGTH} (got {len(name)})"
+                f"solwyn.run(name) exceeds max length {AGENT_RUN_NAME_MAX_LENGTH} (got {len(name)})"
             )
         self._name = name
         self._run_id: str | None = None

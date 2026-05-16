@@ -14,7 +14,7 @@ from conftest import VALID_API_KEY
 
 import solwyn
 from solwyn._base import _SolwynBase
-from solwyn._types import CallStatus
+from solwyn._types import CallStatus, MetadataEvent
 from solwyn.config import SolwynConfig
 
 
@@ -22,7 +22,7 @@ def _make_base() -> _SolwynBase:
     return _SolwynBase(SolwynConfig(api_key=VALID_API_KEY))
 
 
-def _build(base: _SolwynBase) -> object:
+def _build(base: _SolwynBase) -> MetadataEvent:
     return base._build_metadata_event(
         model="gpt-4o",
         provider="openai",
@@ -42,23 +42,23 @@ class TestEmitWithActiveRun:
     def test_outside_scope_fields_are_none(self) -> None:
         base = _make_base()
         event = _build(base)
-        assert event.agent_run_id is None  # type: ignore[attr-defined]
-        assert event.agent_run_name is None  # type: ignore[attr-defined]
+        assert event.agent_run_id is None
+        assert event.agent_run_name is None
 
     def test_inside_scope_fields_are_set(self) -> None:
         base = _make_base()
         with solwyn.run("nightly-batch") as run_id:
             event = _build(base)
-        assert event.agent_run_id == run_id  # type: ignore[attr-defined]
-        assert event.agent_run_name == "nightly-batch"  # type: ignore[attr-defined]
+        assert event.agent_run_id == run_id
+        assert event.agent_run_name == "nightly-batch"
 
     def test_after_scope_fields_revert_to_none(self) -> None:
         base = _make_base()
         with solwyn.run("nightly-batch"):
             pass
         event = _build(base)
-        assert event.agent_run_id is None  # type: ignore[attr-defined]
-        assert event.agent_run_name is None  # type: ignore[attr-defined]
+        assert event.agent_run_id is None
+        assert event.agent_run_name is None
 
     def test_error_event_also_tagged(self) -> None:
         base = _make_base()
@@ -80,7 +80,7 @@ class TestEmitWithActiveRun:
             async with solwyn.run(name) as run_id:
                 await asyncio.sleep(0)
                 event = _build(base)
-                return run_id, event.agent_run_id, event.agent_run_name  # type: ignore[attr-defined]
+                return run_id, event.agent_run_id, event.agent_run_name
 
         a, b = await asyncio.gather(emit_under("task-a"), emit_under("task-b"))
         # Each task's event carries its own run id, never the sibling's.

@@ -214,6 +214,48 @@ class TestMetadataReporter:
             assert payload["service_tier"] == "priority"
             reporter._http.close()
 
+    def test_send_batch_includes_agent_run_fields_when_set(self) -> None:
+        # Verify the new agent_run_* fields reach the wire payload when set
+        # on the event. Guards against regressions in the model_dump path.
+        with patch("solwyn.reporter.MetadataReporter._flush_loop"):
+            reporter = MetadataReporter(
+                "https://api.test.solwyn.ai",
+                VALID_API_KEY,
+            )
+            reporter._shutdown.set()
+            reporter._thread.join(timeout=2.0)
+
+            event = _make_event(
+                agent_run_id="run_test_abc",
+                agent_run_name="test-batch",
+            )
+            with patch.object(reporter._http, "post") as mock_post:
+                reporter._send_batch([event])
+
+            payload = mock_post.call_args.kwargs["json"][0]
+            assert payload["agent_run_id"] == "run_test_abc"
+            assert payload["agent_run_name"] == "test-batch"
+            reporter._http.close()
+
+    def test_send_batch_omits_agent_run_fields_when_none(self) -> None:
+        # When no run scope is active, the wire payload must omit the
+        # keys entirely so the API's per-day fallback id engages.
+        with patch("solwyn.reporter.MetadataReporter._flush_loop"):
+            reporter = MetadataReporter(
+                "https://api.test.solwyn.ai",
+                VALID_API_KEY,
+            )
+            reporter._shutdown.set()
+            reporter._thread.join(timeout=2.0)
+
+            with patch.object(reporter._http, "post") as mock_post:
+                reporter._send_batch([_make_event()])
+
+            payload = mock_post.call_args.kwargs["json"][0]
+            assert "agent_run_id" not in payload
+            assert "agent_run_name" not in payload
+            reporter._http.close()
+
     def test_metadata_event_rejects_overlength_service_tier(self) -> None:
         with pytest.raises(ValidationError):
             _make_event(service_tier="x" * (SERVICE_TIER_MAX_LENGTH + 1))

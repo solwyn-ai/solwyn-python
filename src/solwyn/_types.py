@@ -14,7 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # TokenDetails lives in a separate module to avoid a circular import:
 # _types -> TokenDetails -> (if merged here) _types.
-from solwyn._constants import SERVICE_TIER_MAX_LENGTH
+from solwyn._constants import (
+    AGENT_RUN_ID_MAX_LENGTH,
+    AGENT_RUN_NAME_MAX_LENGTH,
+    SERVICE_TIER_MAX_LENGTH,
+)
 from solwyn._token_details import TokenDetails
 
 # ── Enums ────────────────────────────────────────────────────────────────
@@ -84,7 +88,7 @@ class MetadataEvent(BaseModel):
     timestamp: datetime = Field(..., description="When the LLM call completed (UTC)")
     agent_run_id: str | None = Field(
         default=None,
-        max_length=255,
+        max_length=AGENT_RUN_ID_MAX_LENGTH,
         description=(
             "Stable id for the active solwyn.run() scope. None when no scope is "
             "active — the API synthesizes a per-day fallback id server-side."
@@ -92,7 +96,7 @@ class MetadataEvent(BaseModel):
     )
     agent_run_name: str | None = Field(
         default=None,
-        max_length=255,
+        max_length=AGENT_RUN_NAME_MAX_LENGTH,
         description="Human-readable label passed to solwyn.run(name).",
     )
 

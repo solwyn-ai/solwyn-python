@@ -159,6 +159,45 @@ class TestAsyncReporterSendBatch:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
+    async def test_send_batch_includes_agent_run_fields_when_set(self) -> None:
+        # Async reporter must also propagate agent_run_* into the wire payload.
+        reporter = AsyncMetadataReporter(
+            "https://api.test.solwyn.ai",
+            VALID_API_KEY,
+        )
+
+        event = _make_event(
+            agent_run_id="run_test_xyz",
+            agent_run_name="async-batch",
+        )
+        with patch.object(reporter._http, "post", new_callable=AsyncMock) as mock_post:
+            await reporter._send_batch([event])
+
+        payload = mock_post.call_args.kwargs["json"][0]
+        assert payload["agent_run_id"] == "run_test_xyz"
+        assert payload["agent_run_name"] == "async-batch"
+        await reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_send_batch_omits_agent_run_fields_when_none(self) -> None:
+        # When unset, async reporter must omit the keys so server-side
+        # per-day fallback id engages.
+        reporter = AsyncMetadataReporter(
+            "https://api.test.solwyn.ai",
+            VALID_API_KEY,
+        )
+
+        with patch.object(reporter._http, "post", new_callable=AsyncMock) as mock_post:
+            await reporter._send_batch([_make_event()])
+
+        payload = mock_post.call_args.kwargs["json"][0]
+        assert "agent_run_id" not in payload
+        assert "agent_run_name" not in payload
+        await reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_send_batch_swallows_errors(self) -> None:
         reporter = AsyncMetadataReporter(
             "https://api.test.solwyn.ai",
