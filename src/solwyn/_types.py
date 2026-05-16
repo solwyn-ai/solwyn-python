@@ -82,6 +82,19 @@ class MetadataEvent(BaseModel):
     )
     sdk_instance_id: str = Field(..., description="Unique SDK instance identifier")
     timestamp: datetime = Field(..., description="When the LLM call completed (UTC)")
+    agent_run_id: str | None = Field(
+        default=None,
+        max_length=255,
+        description=(
+            "Stable id for the active solwyn.run() scope. None when no scope is "
+            "active — the API synthesizes a per-day fallback id server-side."
+        ),
+    )
+    agent_run_name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Human-readable label passed to solwyn.run(name).",
+    )
 
 
 class BudgetCheckRequest(BaseModel):

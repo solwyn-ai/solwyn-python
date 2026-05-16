@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from solwyn._run import current_run
 from solwyn._token_details import TokenDetails
 from solwyn._types import CallStatus, MetadataEvent, ProviderName
 from solwyn.circuit_breaker import CircuitBreaker
@@ -78,6 +79,7 @@ class _SolwynBase:
         timestamp: datetime | None = None,
     ) -> MetadataEvent:
         """Build a MetadataEvent for reporting to the cloud API."""
+        agent_run_id, agent_run_name = current_run()
         return MetadataEvent(
             model=model,
             provider=ProviderName(provider),
@@ -90,6 +92,8 @@ class _SolwynBase:
             service_tier=service_tier,
             sdk_instance_id=sdk_instance_id or self._sdk_instance_id,
             timestamp=timestamp or datetime.now(UTC),
+            agent_run_id=agent_run_id,
+            agent_run_name=agent_run_name,
         )
 
     def _build_error_event(

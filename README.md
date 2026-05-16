@@ -113,6 +113,23 @@ for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="")
 ```
 
+## Tagging Calls with Agent Runs
+
+Wrap a unit of work with `solwyn.run(name)` to attribute every LLM call inside it to a single agent run. The dashboard groups cost and latency by run, so you can see "this nightly batch cost $4.20."
+
+```python
+import solwyn
+from openai import OpenAI
+
+client = solwyn.Solwyn(OpenAI(), api_key="sk_proj_...")
+
+with solwyn.run("nightly-batch") as run_id:
+    client.chat.completions.create(model="gpt-4o", messages=[...])
+    client.chat.completions.create(model="gpt-4o", messages=[...])
+```
+
+Works the same with `async with` and is safe across concurrent asyncio tasks — each task sees only its own active run. Calls made outside a `solwyn.run(...)` scope are still tracked; the API groups them into a default per-day run.
+
 ## Budget Enforcement
 
 Set `budget_mode` to control spending:
@@ -187,6 +204,8 @@ The SDK sends a `MetadataEvent` after each LLM call. This is everything it trans
 | `is_model_fallback` | `bool` | Whether the call used `fallback_model` after the primary model failed |
 | `sdk_instance_id` | `str` | Per-process UUID for deduplication |
 | `timestamp` | `datetime` | When the call completed (UTC) |
+| `agent_run_id` | `str \| None` | Run id from the active `solwyn.run(...)` scope, if any |
+| `agent_run_name` | `str \| None` | Run name passed to `solwyn.run(...)`, if any |
 
 **The SDK never captures, logs, or transmits prompts or responses.** This is enforced by [structural tests](tests/unit/test_privacy_firewall.py) and the [privacy module](src/solwyn/_privacy.py).
 
