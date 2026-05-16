@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from conftest import ALLOW_BUDGET_RESPONSE, VALID_API_KEY, VALID_PROJECT_ID
 
+import solwyn as solwyn_pkg
 from solwyn._privacy import estimate_content_length
 from solwyn._types import BudgetMode, ProviderName
 from solwyn.client import Solwyn, _detect_provider
@@ -649,6 +650,48 @@ class TestSyncStreamingInterception:
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
 
+    def test_streaming_uses_run_snapshot_when_consumed_after_scope(self) -> None:
+        client, _ = _mock_openai_client()
+        mock_chunks = [
+            SimpleNamespace(
+                usage=SimpleNamespace(
+                    prompt_tokens=100,
+                    completion_tokens=50,
+                    prompt_tokens_details=None,
+                    completion_tokens_details=None,
+                ),
+                choices=[],
+            ),
+        ]
+        client.chat.completions.create.return_value = mock_chunks
+
+        solwyn = _make_solwyn(client)
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        mock_budget_response = MagicMock()
+        mock_budget_response.json.return_value = ALLOW_BUDGET_RESPONSE
+        mock_budget_response.raise_for_status = MagicMock()
+
+        with (
+            patch.object(solwyn._budget._http, "post", return_value=mock_budget_response),
+            solwyn_pkg.run("nightly") as run_id,
+        ):
+            stream = solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+            )
+
+        list(stream)
+
+        assert len(reported_events) == 1
+        assert reported_events[0].agent_run_id == run_id
+        assert reported_events[0].agent_run_name == "nightly"
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
     def test_streaming_openai_service_tier_in_event(self) -> None:
         """OpenAI service_tier reaches MetadataEvent on sync streaming calls."""
         client, _ = _mock_openai_client()
@@ -941,6 +984,49 @@ class TestAsyncStreamingInterception:
         assert event.status == "success"
         assert event.input_tokens == 100
         assert event.output_tokens == 50
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_async_streaming_uses_run_snapshot_when_consumed_after_scope(self) -> None:
+        client, _ = _mock_openai_client()
+
+        async def async_stream():
+            yield SimpleNamespace(
+                usage=SimpleNamespace(
+                    prompt_tokens=100,
+                    completion_tokens=50,
+                    prompt_tokens_details=None,
+                    completion_tokens_details=None,
+                ),
+                choices=[],
+            )
+
+        client.chat.completions.create = AsyncMockFn(return_value=async_stream())
+
+        solwyn = _make_async_solwyn(client)
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        mock_budget_response = MagicMock()
+        mock_budget_response.json.return_value = ALLOW_BUDGET_RESPONSE
+        mock_budget_response.raise_for_status = MagicMock()
+
+        with patch.object(solwyn._budget._http, "post", return_value=mock_budget_response):
+            async with solwyn_pkg.run("nightly") as run_id:
+                stream = await solwyn.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    stream=True,
+                )
+
+        _ = [chunk async for chunk in stream]
+
+        assert len(reported_events) == 1
+        assert reported_events[0].agent_run_id == run_id
+        assert reported_events[0].agent_run_name == "nightly"
 
         await solwyn._budget._http.aclose()
         await solwyn._reporter._http.aclose()

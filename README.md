@@ -130,6 +130,20 @@ with solwyn.run("nightly-batch") as run_id:
 
 Works the same with `async with` and is safe across concurrent asyncio tasks — each task sees only its own active run. Calls made outside a `solwyn.run(...)` scope are still tracked; the API groups them into a default per-day run.
 
+### ThreadPoolExecutor
+
+`solwyn.run(...)` uses Python `contextvars`. Context propagates across asyncio tasks, but not into `ThreadPoolExecutor` workers. Use `solwyn.run_in_executor(...)` when submitting threaded work that should keep the active run tag:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+with solwyn.run("nightly-batch"), ThreadPoolExecutor() as executor:
+    future = solwyn.run_in_executor(executor, call_openai, prompt)
+    result = future.result()
+```
+
+If you submit directly to an executor, wrap the callable with `contextvars.copy_context().run(...)` yourself.
+
 ## Budget Enforcement
 
 Set `budget_mode` to control spending:

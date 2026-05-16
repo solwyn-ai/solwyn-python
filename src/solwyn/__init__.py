@@ -12,7 +12,7 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 
-from solwyn._run import current_run, run
+from solwyn._run import current_run, run, run_in_executor
 from solwyn.client import AsyncSolwyn, Solwyn
 from solwyn.config import SolwynConfig
 from solwyn.exceptions import (
@@ -32,5 +32,6 @@ __all__ = [
     "ProviderUnavailableError",
     "ConfigurationError",
     "run",
+    "run_in_executor",
     "current_run",
 ]

@@ -77,9 +77,10 @@ class _SolwynBase:
         service_tier: str | None = None,
         sdk_instance_id: str | None = None,
         timestamp: datetime | None = None,
+        agent_run: tuple[str | None, str | None] | None = None,
     ) -> MetadataEvent:
         """Build a MetadataEvent for reporting to the cloud API."""
-        agent_run_id, agent_run_name = current_run()
+        agent_run_id, agent_run_name = current_run() if agent_run is None else agent_run
         return MetadataEvent(
             model=model,
             provider=ProviderName(provider),
@@ -103,6 +104,7 @@ class _SolwynBase:
         provider: str,
         latency_ms: float,
         is_model_fallback: bool,
+        agent_run: tuple[str | None, str | None] | None = None,
     ) -> MetadataEvent:
         """Build an error-status MetadataEvent with zeroed token counts.
 
@@ -118,6 +120,7 @@ class _SolwynBase:
             latency_ms=latency_ms,
             status=CallStatus.ERROR,
             is_model_fallback=is_model_fallback,
+            agent_run=agent_run,
         )
 
     def _get_circuit_breaker(self, provider: str) -> CircuitBreaker:
