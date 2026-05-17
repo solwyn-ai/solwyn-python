@@ -37,6 +37,7 @@ from solwyn._proxies import (
     _SyncMessagesProxy,
     _SyncModelsProxy,
 )
+from solwyn._run import current_run
 from solwyn._token_details import TokenDetails
 from solwyn._types import CallStatus, CircuitState, ProviderName
 from solwyn.budget import (
@@ -207,6 +208,7 @@ class Solwyn(_SolwynBase):
         """
         model = cast(str, kwargs["model"])
         is_streaming = bool(kwargs.get("stream", False)) or _force_stream
+        agent_run = current_run()
         is_model_fallback = False
 
         # 1. Estimate input tokens from input text (length-only; never materializes joined string)
@@ -237,6 +239,7 @@ class Solwyn(_SolwynBase):
                     latency_ms=0.0,
                     status=CallStatus.BUDGET_DENIED,
                     is_model_fallback=False,
+                    agent_run=agent_run,
                 )
                 self._reporter.report(event)
             except Exception:
@@ -279,6 +282,7 @@ class Solwyn(_SolwynBase):
                     provider=selected_provider,
                     latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                     is_model_fallback=ctx.is_model_fallback,
+                    agent_run=agent_run,
                 )
             )
 
@@ -298,6 +302,7 @@ class Solwyn(_SolwynBase):
                         provider=selected_provider,
                         latency_ms=(time.monotonic() - retry_start) * 1000,
                         is_model_fallback=True,
+                        agent_run=agent_run,
                     )
                 )
                 primary_exc.add_note(
@@ -338,6 +343,7 @@ class Solwyn(_SolwynBase):
                     status=CallStatus.SUCCESS,
                     is_model_fallback=ctx.is_model_fallback,
                     service_tier=service_tier,
+                    agent_run=agent_run,
                 )
                 self._reporter.report(event)
 
@@ -350,6 +356,7 @@ class Solwyn(_SolwynBase):
                         provider=selected_provider,
                         latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                         is_model_fallback=ctx.is_model_fallback,
+                        agent_run=agent_run,
                     )
                 )
 
@@ -375,6 +382,7 @@ class Solwyn(_SolwynBase):
             status=CallStatus.SUCCESS,
             is_model_fallback=ctx.is_model_fallback,
             service_tier=service_tier,
+            agent_run=agent_run,
         )
         self._reporter.report(event)
 
@@ -521,6 +529,7 @@ class AsyncSolwyn(_SolwynBase):
         """Async core interception logic. See Solwyn._intercepted_call."""
         model = cast(str, kwargs["model"])
         is_streaming = bool(kwargs.get("stream", False)) or _force_stream
+        agent_run = current_run()
         is_model_fallback = False
 
         char_count = estimate_content_length(kwargs)
@@ -549,6 +558,7 @@ class AsyncSolwyn(_SolwynBase):
                     latency_ms=0.0,
                     status=CallStatus.BUDGET_DENIED,
                     is_model_fallback=False,
+                    agent_run=agent_run,
                 )
                 self._reporter.report(event)
             except Exception:
@@ -588,6 +598,7 @@ class AsyncSolwyn(_SolwynBase):
                     provider=selected_provider,
                     latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                     is_model_fallback=ctx.is_model_fallback,
+                    agent_run=agent_run,
                 )
             )
 
@@ -607,6 +618,7 @@ class AsyncSolwyn(_SolwynBase):
                         provider=selected_provider,
                         latency_ms=(time.monotonic() - retry_start) * 1000,
                         is_model_fallback=True,
+                        agent_run=agent_run,
                     )
                 )
                 primary_exc.add_note(
@@ -643,6 +655,7 @@ class AsyncSolwyn(_SolwynBase):
                     status=CallStatus.SUCCESS,
                     is_model_fallback=ctx.is_model_fallback,
                     service_tier=service_tier,
+                    agent_run=agent_run,
                 )
                 self._reporter.report(event)
 
@@ -655,6 +668,7 @@ class AsyncSolwyn(_SolwynBase):
                         provider=selected_provider,
                         latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                         is_model_fallback=ctx.is_model_fallback,
+                        agent_run=agent_run,
                     )
                 )
 
@@ -679,6 +693,7 @@ class AsyncSolwyn(_SolwynBase):
             status=CallStatus.SUCCESS,
             is_model_fallback=ctx.is_model_fallback,
             service_tier=service_tier,
+            agent_run=agent_run,
         )
         self._reporter.report(event)
 

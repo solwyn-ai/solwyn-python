@@ -9,12 +9,24 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 
 # TokenDetails lives in a separate module to avoid a circular import:
 # _types -> TokenDetails -> (if merged here) _types.
-from solwyn._constants import SERVICE_TIER_MAX_LENGTH
+from solwyn._constants import (
+    AGENT_RUN_ID_MAX_LENGTH,
+    AGENT_RUN_NAME_MAX_LENGTH,
+    SERVICE_TIER_MAX_LENGTH,
+)
 from solwyn._token_details import TokenDetails
 
 # ── Enums ────────────────────────────────────────────────────────────────
@@ -63,6 +75,19 @@ class MetadataEvent(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @model_serializer(mode="wrap")
+    def _serialize_without_none(
+        self,
+        handler: SerializerFunctionWrapHandler,
+        _info: SerializationInfo,
+    ) -> dict[str, Any]:
+        """Serialize telemetry events without null-valued optional fields."""
+        data = handler(self)
+        if not isinstance(data, dict):
+            raise RuntimeError("MetadataEvent serializer expected dict output")
+        serialized = cast(dict[str, Any], data)
+        return {key: value for key, value in serialized.items() if value is not None}
+
     model: str = Field(..., max_length=100, description="LLM model name (e.g. gpt-4o)")
     provider: ProviderName = Field(..., description="LLM provider")
     input_tokens: int = Field(..., ge=0, description="Input token count")
@@ -82,6 +107,20 @@ class MetadataEvent(BaseModel):
     )
     sdk_instance_id: str = Field(..., description="Unique SDK instance identifier")
     timestamp: datetime = Field(..., description="When the LLM call completed (UTC)")
+    agent_run_id: str | None = Field(
+        default=None,
+        max_length=AGENT_RUN_ID_MAX_LENGTH,
+        description=(
+            "Stable id for the active solwyn.run() scope. None when no scope is "
+            "active — the API synthesizes _auto-{sdk_instance_id}-{YYYY-MM-DD} "
+            "server-side from the event timestamp."
+        ),
+    )
+    agent_run_name: str | None = Field(
+        default=None,
+        max_length=AGENT_RUN_NAME_MAX_LENGTH,
+        description="Human-readable label passed to solwyn.run(name).",
+    )
 
 
 class BudgetCheckRequest(BaseModel):
