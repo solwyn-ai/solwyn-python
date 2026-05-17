@@ -91,7 +91,8 @@ class MetadataEvent(BaseModel):
         max_length=AGENT_RUN_ID_MAX_LENGTH,
         description=(
             "Stable id for the active solwyn.run() scope. None when no scope is "
-            "active — the API synthesizes a per-day fallback id server-side."
+            "active — the API synthesizes _auto-{sdk_instance_id}-{YYYY-MM-DD} "
+            "server-side from the event timestamp."
         ),
     )
     agent_run_name: str | None = Field(

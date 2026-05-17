@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from contextvars import Context
+from contextvars import copy_context
 
 import pytest
 
@@ -32,6 +32,11 @@ class TestRunIdGenerator:
     def test_ids_are_unique(self) -> None:
         ids = {_run._new_run_id() for _ in range(100)}
         assert len(ids) == 100
+
+    def test_ids_use_uuid_format(self) -> None:
+        run_id = _run._new_run_id()
+        assert len(run_id) == len("run_00000000-0000-0000-0000-000000000000")
+        assert run_id[12] == "-"
 
     def test_id_fits_wire_max_length(self) -> None:
         # Wire field cap is 255 chars; the id must comfortably fit.
@@ -101,6 +106,34 @@ class TestRunContextManagerSync:
     def test_control_chars_in_name_rejected(self, name: str) -> None:
         with pytest.raises(ValueError, match="control characters"), solwyn.run(name):
             pass
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "nightly\u0085batch",
+            "nightly\u2028batch",
+            "nightly\u2029batch",
+            "nightly\u200bbatch",
+            "nightly\u202ebatch",
+        ],
+    )
+    def test_unicode_control_and_format_chars_in_name_rejected(self, name: str) -> None:
+        with pytest.raises(ValueError, match="control characters"):
+            solwyn.run(name)
+
+    def test_non_string_name_rejected(self) -> None:
+        class DuckName:
+            def strip(self) -> str:
+                return "ok"
+
+            def __iter__(self):
+                return iter("ok")
+
+            def __len__(self) -> int:
+                return 2
+
+        with pytest.raises(TypeError, match="requires str"):
+            solwyn.run(DuckName())  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
@@ -184,32 +217,57 @@ class TestRunScopeFailureModes:
         scope.__exit__(None, None, None)
         assert current_run() == (None, None)
 
+    def test_out_of_order_exit_raises_without_corrupting_active_run(self) -> None:
+        outer = solwyn.run("outer")
+        inner = solwyn.run("inner")
+
+        outer_id = outer.__enter__()
+        inner_id = inner.__enter__()
+
+        with pytest.raises(RuntimeError, match="LIFO"):
+            outer.__exit__(None, None, None)
+
+        assert current_run() == (inner_id, "inner")
+        inner.__exit__(None, None, None)
+        assert current_run() == (outer_id, "outer")
+        outer.__exit__(None, None, None)
+        assert current_run() == (None, None)
+
+    def test_run_scope_does_not_create_per_instance_contextvars(self) -> None:
+        for idx in range(100):
+            with solwyn.run(f"run-{idx}"):
+                pass
+
+        leaked_frame_vars = [
+            var.name for var in copy_context() if var.name.startswith("solwyn_run_scope_frames_")
+        ]
+        assert leaked_frame_vars == []
+
     def test_run_in_executor_propagates_context(self) -> None:
         with solwyn.run("batch") as run_id, ThreadPoolExecutor(max_workers=1) as executor:
             future = solwyn.run_in_executor(executor, current_run)
 
         assert future.result() == (run_id, "batch")
 
+    def test_raw_executor_submit_does_not_propagate_context(self) -> None:
+        with solwyn.run("batch"), ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(current_run)
+
+        assert future.result() == (None, None)
+
     @pytest.mark.asyncio
-    async def test_abandoned_async_generator_close_from_different_context_does_not_raise(
+    async def test_run_inside_async_generator_is_rejected_before_contaminating_consumer(
         self,
     ) -> None:
         async def producer():
             async with solwyn.run("gen"):
-                for item in range(10):
-                    yield item
+                yield 1
 
-        try:
+        async with solwyn.run("outer") as outer_id:
             gen = producer()
-            async for item in gen:
-                if item == 2:
-                    break
-            close_task = asyncio.create_task(gen.aclose(), context=Context())
-            await close_task
-        finally:
-            _run._active_run.set(None)
-
-        assert close_task.done()
+            with pytest.raises(TypeError, match="async generators"):
+                await gen.__anext__()
+            assert current_run() == (outer_id, "outer")
 
 
 @pytest.mark.unit

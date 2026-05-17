@@ -239,6 +239,7 @@ class Solwyn(_SolwynBase):
                     latency_ms=0.0,
                     status=CallStatus.BUDGET_DENIED,
                     is_model_fallback=False,
+                    agent_run=agent_run,
                 )
                 self._reporter.report(event)
             except Exception:
@@ -281,6 +282,7 @@ class Solwyn(_SolwynBase):
                     provider=selected_provider,
                     latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                     is_model_fallback=ctx.is_model_fallback,
+                    agent_run=agent_run,
                 )
             )
 
@@ -300,6 +302,7 @@ class Solwyn(_SolwynBase):
                         provider=selected_provider,
                         latency_ms=(time.monotonic() - retry_start) * 1000,
                         is_model_fallback=True,
+                        agent_run=agent_run,
                     )
                 )
                 primary_exc.add_note(
@@ -379,6 +382,7 @@ class Solwyn(_SolwynBase):
             status=CallStatus.SUCCESS,
             is_model_fallback=ctx.is_model_fallback,
             service_tier=service_tier,
+            agent_run=agent_run,
         )
         self._reporter.report(event)
 
@@ -554,6 +558,7 @@ class AsyncSolwyn(_SolwynBase):
                     latency_ms=0.0,
                     status=CallStatus.BUDGET_DENIED,
                     is_model_fallback=False,
+                    agent_run=agent_run,
                 )
                 self._reporter.report(event)
             except Exception:
@@ -593,6 +598,7 @@ class AsyncSolwyn(_SolwynBase):
                     provider=selected_provider,
                     latency_ms=(time.monotonic() - ctx.start_time) * 1000,
                     is_model_fallback=ctx.is_model_fallback,
+                    agent_run=agent_run,
                 )
             )
 
@@ -612,6 +618,7 @@ class AsyncSolwyn(_SolwynBase):
                         provider=selected_provider,
                         latency_ms=(time.monotonic() - retry_start) * 1000,
                         is_model_fallback=True,
+                        agent_run=agent_run,
                     )
                 )
                 primary_exc.add_note(
@@ -686,6 +693,7 @@ class AsyncSolwyn(_SolwynBase):
             status=CallStatus.SUCCESS,
             is_model_fallback=ctx.is_model_fallback,
             service_tier=service_tier,
+            agent_run=agent_run,
         )
         self._reporter.report(event)
 

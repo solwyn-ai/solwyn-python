@@ -71,6 +71,19 @@ class TestMetadataEventAgentRunFields:
         assert restored.agent_run_id == "run_K7qZ3xR1pNvL9wMs"
         assert restored.agent_run_name == "nightly-batch"
 
+    def test_no_scope_json_wire_shape_omits_agent_run_fields(self) -> None:
+        # No-scope events rely on absent agent_run_* keys so the API's
+        # server-side auto-run fallback can synthesize the denominator.
+        event = _make_event()
+
+        raw = event.model_dump_json(exclude_none=True)
+        restored = MetadataEvent.model_validate_json(raw)
+
+        assert "agent_run_id" not in raw
+        assert "agent_run_name" not in raw
+        assert restored.agent_run_id is None
+        assert restored.agent_run_name is None
+
     def test_extra_field_still_forbidden(self) -> None:
         # Asserts extra="forbid" is preserved — typos in field names must
         # raise loudly rather than be silently dropped.

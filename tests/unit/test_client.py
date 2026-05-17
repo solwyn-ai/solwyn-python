@@ -284,6 +284,44 @@ class TestBudgetCheckBeforeCall:
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
 
+    def test_budget_denied_event_tags_agent_run_id(self) -> None:
+        client, _ = _mock_openai_client()
+        solwyn = _make_solwyn(client, budget_mode=BudgetMode.HARD_DENY)
+
+        deny_response = {
+            "allowed": False,
+            "remaining_budget": 0.0,
+            "reservation_id": None,
+            "mode": "hard_deny",
+            "budget_limit": 10.0,
+            "current_usage": 10.0,
+            "denied_by_period": "monthly",
+            "project_id": VALID_PROJECT_ID,
+        }
+        mock_budget_response = MagicMock()
+        mock_budget_response.json.return_value = deny_response
+        mock_budget_response.raise_for_status = MagicMock()
+
+        with (
+            patch.object(solwyn._budget._http, "post", return_value=mock_budget_response),
+            patch.object(solwyn._reporter, "report") as mock_report,
+            solwyn_pkg.run("expensive-job") as run_id,
+            pytest.raises(BudgetExceededError),
+        ):
+            solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+
+        mock_report.assert_called_once()
+        event = mock_report.call_args[0][0]
+        assert event.status == "budget_denied"
+        assert event.agent_run_id == run_id
+        assert event.agent_run_name == "expensive-job"
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
     def test_google_budget_denied_reports_nonzero_input_tokens(self) -> None:
         """Hard-deny for a Google call with contents='Hello' reports input_tokens > 0."""
         client = MagicMock()
@@ -527,6 +565,29 @@ class TestRichTokenExtraction:
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
 
+    def test_openai_non_streaming_call_tags_agent_run_id(self) -> None:
+        client, _ = _mock_openai_client()
+        solwyn = _make_solwyn(client)
+
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_result()),
+            solwyn_pkg.run("nightly-batch") as run_id,
+        ):
+            solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+
+        assert len(reported_events) == 1
+        assert reported_events[0].agent_run_id == run_id
+        assert reported_events[0].agent_run_name == "nightly-batch"
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
     def test_anthropic_non_streaming_service_tier_none_in_event(self) -> None:
         """Providers without a service tier report None behaviorally through the client."""
         client, _ = _mock_anthropic_client()
@@ -543,6 +604,65 @@ class TestRichTokenExtraction:
             )
 
         assert reported_events[0].service_tier is None
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+
+@pytest.mark.unit
+class TestSyncErrorAgentRunTagging:
+    """Error and fallback-retry events preserve the active agent_run."""
+
+    def test_primary_error_event_tags_agent_run_id(self) -> None:
+        client, _ = _mock_openai_client()
+        client.chat.completions.create.side_effect = RuntimeError("primary failed")
+        solwyn = _make_solwyn(client)
+
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_result()),
+            solwyn_pkg.run("doomed") as run_id,
+            pytest.raises(RuntimeError, match="primary failed"),
+        ):
+            solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+
+        assert len(reported_events) == 1
+        assert reported_events[0].status == "error"
+        assert reported_events[0].agent_run_id == run_id
+        assert reported_events[0].agent_run_name == "doomed"
+
+        solwyn._reporter._http.close()
+        solwyn._budget._http.close()
+
+    def test_fallback_retry_error_events_tag_agent_run_id(self) -> None:
+        client, _ = _mock_openai_client()
+        client.chat.completions.create.side_effect = [
+            RuntimeError("primary failed"),
+            RuntimeError("fallback failed"),
+        ]
+        solwyn = _make_solwyn(client, fallback_model="gpt-4o-mini")
+
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with (
+            patch.object(solwyn._budget, "check_budget", return_value=_allow_budget_result()),
+            solwyn_pkg.run("retry-doomed") as run_id,
+            pytest.raises(RuntimeError, match="primary failed"),
+        ):
+            solwyn.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+
+        assert [event.status for event in reported_events] == ["error", "error"]
+        assert all(event.agent_run_id == run_id for event in reported_events)
+        assert all(event.agent_run_name == "retry-doomed" for event in reported_events)
 
         solwyn._reporter._http.close()
         solwyn._budget._http.close()
@@ -1218,6 +1338,46 @@ class TestAsyncNonStreamingInterception:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
+    async def test_async_budget_denied_event_tags_agent_run_id(self) -> None:
+        client, _ = _mock_openai_client()
+        client.chat.completions.create = AsyncMockFn()
+
+        solwyn = _make_async_solwyn(client, budget_mode=BudgetMode.HARD_DENY)
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        deny_result = SimpleNamespace(
+            allowed=False,
+            project_id=VALID_PROJECT_ID,
+            budget_limit=10.0,
+            current_usage=10.0,
+            mode=BudgetMode.HARD_DENY,
+            reservation_id=None,
+        )
+
+        with patch.object(
+            solwyn._budget,
+            "check_budget",
+            new=AsyncMockFn(return_value=deny_result),
+        ):
+            async with solwyn_pkg.run("async-expensive-job") as run_id:
+                with pytest.raises(BudgetExceededError):
+                    await solwyn.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[{"role": "user", "content": "Hello"}],
+                    )
+
+        client.chat.completions.create.assert_not_called()
+        assert len(reported_events) == 1
+        assert reported_events[0].status == "budget_denied"
+        assert reported_events[0].agent_run_id == run_id
+        assert reported_events[0].agent_run_name == "async-expensive-job"
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_async_openai_non_streaming_service_tier_in_event(self) -> None:
         """OpenAI service_tier reaches MetadataEvent on async non-streaming calls."""
         client, mock_response = _mock_openai_client()
@@ -1239,6 +1399,98 @@ class TestAsyncNonStreamingInterception:
             )
 
         assert reported_events[0].service_tier == "batch"
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_async_openai_non_streaming_call_tags_agent_run_id(self) -> None:
+        client, mock_response = _mock_openai_client()
+        client.chat.completions.create = AsyncMockFn(return_value=mock_response)
+
+        solwyn = _make_async_solwyn(client)
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with patch.object(
+            solwyn._budget,
+            "check_budget",
+            new=AsyncMockFn(return_value=_allow_budget_result()),
+        ):
+            async with solwyn_pkg.run("async-nightly-batch") as run_id:
+                await solwyn.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": "Hello"}],
+                )
+
+        assert len(reported_events) == 1
+        assert reported_events[0].agent_run_id == run_id
+        assert reported_events[0].agent_run_name == "async-nightly-batch"
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_async_primary_error_event_tags_agent_run_id(self) -> None:
+        client, _ = _mock_openai_client()
+        client.chat.completions.create = AsyncMockFn(side_effect=RuntimeError("primary failed"))
+
+        solwyn = _make_async_solwyn(client)
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with patch.object(
+            solwyn._budget,
+            "check_budget",
+            new=AsyncMockFn(return_value=_allow_budget_result()),
+        ):
+            async with solwyn_pkg.run("async-doomed") as run_id:
+                with pytest.raises(RuntimeError, match="primary failed"):
+                    await solwyn.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[{"role": "user", "content": "Hello"}],
+                    )
+
+        assert len(reported_events) == 1
+        assert reported_events[0].status == "error"
+        assert reported_events[0].agent_run_id == run_id
+        assert reported_events[0].agent_run_name == "async-doomed"
+
+        await solwyn._budget._http.aclose()
+        await solwyn._reporter._http.aclose()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_async_fallback_retry_error_events_tag_agent_run_id(self) -> None:
+        client, _ = _mock_openai_client()
+        client.chat.completions.create = AsyncMockFn(
+            side_effect=[
+                RuntimeError("primary failed"),
+                RuntimeError("fallback failed"),
+            ]
+        )
+
+        solwyn = _make_async_solwyn(client, fallback_model="gpt-4o-mini")
+        reported_events: list = []
+        solwyn._reporter.report = lambda e: reported_events.append(e)
+
+        with patch.object(
+            solwyn._budget,
+            "check_budget",
+            new=AsyncMockFn(return_value=_allow_budget_result()),
+        ):
+            async with solwyn_pkg.run("async-retry-doomed") as run_id:
+                with pytest.raises(RuntimeError, match="primary failed"):
+                    await solwyn.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[{"role": "user", "content": "Hello"}],
+                    )
+
+        assert [event.status for event in reported_events] == ["error", "error"]
+        assert all(event.agent_run_id == run_id for event in reported_events)
+        assert all(event.agent_run_name == "async-retry-doomed" for event in reported_events)
 
         await solwyn._budget._http.aclose()
         await solwyn._reporter._http.aclose()
